@@ -33,10 +33,18 @@ import random
 QSCALES = {
     #                        C      C#     D      D#     E      F      F#     G      G#     A      A#     B
     "Chromatic" : Quantizer([True,  True,  True,  True,  True,  True,  True,  True,  True,  True,  True,  True]),
-    "Major"     : Quantizer([True,  False, True,  False, True,  True,  False, True,  False, True,  False, True]),
-    "Maj135"    : Quantizer([True,  False, False, False, True,  False, False, True,  False, True,  False, True]),
-    # TODO: more scales
-    "Whole"     : Quantizer([True,  False, True,  False, True,  False, True,  False, True,  False, True,  False]),
+    
+    "NatMaj"    : Quantizer([True,  False, True,  False, True,  True,  False, True,  False, True,  False, True]),
+    "HarMaj"    : Quantizer([True,  False, True,  False, True,  True,  False, True,  True,  False, True,  False]),
+    
+    "NatMin"    : Quantizer([True,  False, True,  True,  False, True,  False, True,  True,  False, True,  False]),
+    "HarMin"    : Quantizer([True,  False, True,  True,  False, True,  False, True,  True,  False, False, True]),
+    
+    "Whole"     : Quantizer([True,  False, True,  False, True,  False, True,  False, True,  False, True,  False])
+    
+    # TODO: any additional scales?
+    # maybe 1-3-5 or 1-3-5-b7 ?
+    # Or some jazz scales?
 }
 
 class MasterClock:
