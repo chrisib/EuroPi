@@ -60,10 +60,11 @@ class MasterClock:
     ## The clock actually runs faster than its maximum BPM to allow
     #  clock divisions to work nicely
     #
-    #  Use 24 internal clock pulses per quarter note, which is a
-    #  valid MIDI standard.  This lets us handle triplets nicely, as
-    #  well as smaller divisions down to /8
-    PPQN = 24
+    #  Use 48 internal clock pulses per quarter note. This is slow enough
+    #  that we won't choke the CPU with interrupts, but smooth enough that we
+    #  should be able to approximate complex waves.  Must be a multiple of
+    #  3 to properly support triplets
+    PPQN = 48
     
     def __init__(self, bpm, channels):
         """Create the main clock to run at a given bpm
@@ -97,7 +98,8 @@ class MasterClock:
         self.__recalculate_ticks()
         
     def on_tick(self, timer):
-        pass
+        for ch in self.channels:
+            ch.tick()
         
     def start(self):
         """Start the timer
@@ -206,12 +208,27 @@ class PamsOutput:
         self.wave = settings["wave"]
         self.quantizer_index = settings["quant"]
         
+    def recalculate_pattern(self):
+        """Recalculate the internal trigger pattern for this channel
+
+        Every time we tick we just set the output level according to the pre-computed
+        pattern
+        """
+        pass
+    
     def reset(self):
         """Reset the current output to the beginning
         """
         pass
+    
+    def tick(self):
+        """Advance the current pattern one tick
+        """
+        pass
 
 class PamsWorkout(EuroPiScript):
+    """The main script for the Pam's Workout implementation
+    """
     def __init__(self):
         super().__init__()
         
