@@ -103,16 +103,16 @@ class PamsOutput:
         ## Probability that we skip an output [0-1]
         self.skip_prob = 0.0
 
-class EuroPams(EuroPiScript):
+class PamsWorkout(EuroPiScript):
     def __init__(self):
         super().__init__()
         
     @classmethod
     def display_name(cls):
-        return "EuroPam's"
+        return "Pam's Workout"
         
     def main(self):
         pass
     
 if __name__=="__main__":
-    EuroPams().main()
+    PamsWorkout().main()
