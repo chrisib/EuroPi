@@ -10,7 +10,7 @@ BPM (TODO: define the range!).  Each output has an independently controlled
 clock multiplier or divider, chosen from the following:
 
 ```
-[/8, /6, /4, /2, x1, x2, x3, x4, x6, x8, x12, x16, x24, x32]
+[x8, x6, x4, x3, x2, x1, /2, /3, /4, /6, /8, /12, /16, /24, /32]
 ```
 
 ## I/O Mapping
@@ -40,7 +40,7 @@ or other control to attenuate the input signal.
 
 ## Menu Navigation
 
-Rotate `k1` to scroll through the current menu.  Pressing and holding `b2` for 1s will
+Rotate `k1` to scroll through the current menu.  Pressing and holding `b2` for 0.5s will
 enter a sub-menu.  Pressing and holding `b2` again will return to the parent menu.
 
 On any given menu item, pressing `b2` (without holding) will enter edit mode for that
