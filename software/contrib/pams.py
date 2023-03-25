@@ -51,21 +51,57 @@ class MasterClock:
     """The main clock that ticks and runs the outputs
     """
     
+    ## The clock actually runs faster than its maximum BPM to allow
+    #  clock divisions to work nicely
+    #
+    #  Use 24 internal clock pulses per quarter note, which is a
+    #  valid MIDI standard.  This lets us handle triplets nicely, as
+    #  well as smaller divisions down to /8
+    PPQN = 24
+    
     def __init__(self, bpm):
         """Create the main clock to run at a given bpm
         """
         self.bpm = bpm
+        
+        self.recalculate_ticks()
+        
+    def recalculate_ticks(self):
+        """Recalculate the number of ms per tick
+        """
+        self.ms_per_beat = self.bpm / 60.0 * 1000.0
+        self.ms_per_tick = self.ms_per_beat / self.PPQN
 
 class PamsOutput:
-    """Controls a single output pin
+    """Controls a single output jack
     """
     
-    def __init__(self, pin_out):
-        """Create a new output to control a single pin
+    WAVE_SQUARE = 0
+    WAVE_RANDOM = 1
+    
+    def __init__(self, cv_out):
+        """Create a new output to control a single cv output
         
-        @param pin_out: One of the six output pins
+        @param cv_out: One of the six output pins
         """
-        self.output = pin_out
+        self.cv_out = cv_out
+        
+        ## What shape of wave are we generating?
+        #
+        #  For now, stick to square waves for triggers & gates
+        self.wave = WAVE_SQUARE
+        
+        ## Euclidean -- number of steps in the pattern (0 = disabled)
+        self.e_steps = 0
+        
+        ## Euclidean -- number of triggers in the pattern
+        self.e_trigs = 0
+        
+        ## Euclidean -- rotation of the pattern
+        self.e_rot = 0
+        
+        ## Probability that we skip an output [0-1]
+        self.skip_prob = 0.0
 
 class EuroPams(EuroPiScript):
     def __init__(self):
