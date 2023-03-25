@@ -19,12 +19,10 @@ clock multiplier or divider, chosen from the following:
 |---------------|-------------------------------------------------------------------|
 | `din`         | External start/stop input                                         |
 | `ain`         | Routable CV input to control other parameters                     |
-|---------------|-------------------------------------------------------------------|
 | `b1`          | Start/Stop input                                                  |
 | `b2`          | Press to enter/exit edit mode. Long-press to enter/leave sub-menu |
 | `k1`          | Scroll through the current menu                                   |
 | `k2`          | Scroll through allowed values for the current menu item           |
-|---------------|-------------------------------------------------------------------|
 | `cv1` - `cv6` | Output signals. Configuration is explained below                  |
 
 ## External CV Routing
@@ -83,7 +81,7 @@ The submenu for the main clock has the following options:
 
 Each of the 6 CV output channels has the following options:
 
-- Mod -- the clock modifier.  See above for valid ranges.
+- `Mod` -- the clock modifier.  See above for valid ranges.
 
 The submenu for each CV output has the following options:
 
