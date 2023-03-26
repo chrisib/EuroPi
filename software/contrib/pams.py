@@ -6,11 +6,9 @@ a multiple/division of that rate.
 
 Each channel supports the following options:
 - clock multiplier/divider
-- wave shape (?? -- may skip this)
+- wave shape
     - square (default)
     - sine
-    - saw
-    - ramp
     - triangle
     - random
 - amplitude %
@@ -35,6 +33,9 @@ import random
 SELECT_OPTION_Y = 16
 HALF_CHAR_WIDTH = int(CHAR_WIDTH / 2)
 
+## How many ms does a button need to be held to qualify as a long press?
+LONG_PRESS_MS = 500
+
 ## The scales that each PamsOutput can quantize to
 QSCALES = {
     #                        C      C#     D      D#     E      F      F#     G      G#     A      A#     B
@@ -53,7 +54,8 @@ QSCALES = {
     # Or some jazz scales?
 }
 
-QUANTIZERS = [
+## Sorted list of names for the quantizers to display
+QUANTIZER_LABELS = [
     "None",
     "Chromatic",
     "Nat Maj",
@@ -63,28 +65,8 @@ QUANTIZERS = [
     "Whole"
 ]
 
-## How many ms does a button need to be held to qualify as a long press?
-LONG_PRESS_MS = 500
-
-CLOCK_MODS = [
-    "x8",
-    "x6",
-    "x4",
-    "x3",
-    "x2",
-    "x1",
-    "/2",
-    "/3",
-    "/4",
-    "/6",
-    "/8",
-    "/12",
-    "/16",
-    "/24",
-    "/32"
-]
-
-CLOCK_RATIOS = {
+## Available clock modifiers
+CLOCK_MODS = {
     "x8" : 8.0,
     "x6" : 6.0,
     "x4" : 4.0,
@@ -102,26 +84,80 @@ CLOCK_RATIOS = {
     "/32" : 1/32.0
 }
 
-WAVE_SQUARE = 0
-WAVE_RANDOM = 1
-WAVE_SHAPES = [
-    "Square",
-    "Random"
+## Sorted list of labels for the clock modifers to display
+CLOCK_MOD_LABELS = [
+    "x8",
+    "x6",
+    "x4",
+    "x3",
+    "x2",
+    "x1",
+    "/2",
+    "/3",
+    "/4",
+    "/6",
+    "/8",
+    "/12",
+    "/16",
+    "/24",
+    "/32"
 ]
-WAVE_SHAPE_IDS= {
-    "Square": WAVE_SQUARE,
-    "Random": WAVE_RANDOM
-}
 
-class MenuEditableObject:
-    """An object that can be dynamically edited via the UI menu
-    """
-    def apply_changes(self):
-        """Reimplement this in every inherited class
-        """
-        pass
+## Standard pulse/square wave with PWM
+WAVE_SQUARE = 0
 
-class MasterClock(MenuEditableObject):
+## Triangle wave
+#
+#  - When width is 50 this is a symmetrical triangle /\
+#  - When width is < 50 we become more saw-like |\
+#  - When sidth is > 50 we become more ramp-like /|
+WAVE_TRIANGLE = 1
+
+## Sine wave
+#
+#  Width is ignored
+WAVE_SIN = 2
+
+## Random wave
+#
+#  Width is ignored
+WAVE_RANDOM = 3
+
+## Reset gate
+#
+#  Turns on when the clock stops
+WAVE_RESET = 4
+
+## Available wave shapes
+WAVE_SHAPES = [
+    WAVE_SQUARE,
+    WAVE_TRIANGLE,
+    WAVE_SIN,
+    WAVE_RANDOM,
+    WAVE_RESET
+]
+
+
+WAVE_SHAPE_LABELS = [
+    "Sq.",
+    "Tri.",
+    "Sin",
+    "Rnd",
+    "Rst"
+]
+
+## Sorted list of wave shapes to display
+#
+#  These are 12x12 bitmaps
+WAVE_SHAPE_IMGS = [
+    b'\xfe\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x83\xf0',
+    b'\x06\x00\x06\x00\t\x00\t\x00\x10\x80\x10\x80 @ @@ @ \x80\x10\x80\x10',
+    b'\x10\x00(\x00D\x00D\x00\x82\x00\x82\x00\x82\x10\x82\x10\x01\x10\x01\x10\x00\xa0\x00@',
+    b'\x00\x00\x08\x00\x08\x00\x14\x00\x16\x80\x16\xa0\x11\xa0Q\xf0Pp`P@\x10\x80\x00',
+    b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00'
+]
+
+class MasterClock:
     """The main clock that ticks and runs the outputs
     """
     
@@ -193,12 +229,16 @@ class MasterClock(MenuEditableObject):
         if self.is_running:
             self.is_running = False
             self.timer.deinit()
-        
-    def apply_changes(self):
-        """If we've changed anything via the menu, recalculate the necessary changes
-        """
-        super().apply_changes()
-        self.__recalcualte_ticks()
+            
+            # Fire a reset trigger on any channels that have the WAVE_RESET mode set
+            # This trigger lasts 10ms
+            for ch in self.channels:
+                if ch.wave == WAVE_RESET:
+                    ch.cv_out.voltage(MAX_OUTPUT_VOLTAGE * ch.amplitude / 100.0)
+            time.sleep(10)
+            for ch in self.channels:
+                if ch.wave == WAVE_RESET:
+                    ch.cv_out.voltage(0)
         
     def __recalculate_ticks(self):
         """Recalculate the number of ms per tick
@@ -216,7 +256,7 @@ class MasterClock(MenuEditableObject):
         self.bpm = bpm
         self.__recalculate_ticks()
 
-class PamsOutput(MenuEditableObject):
+class PamsOutput:
     """Controls a single output jack
     """
     
@@ -302,29 +342,6 @@ class PamsOutput(MenuEditableObject):
         
         self.recalculate_pattern()
         
-    def apply_changes(self):
-        """If we've changed anything via the menu, recalculate the necessary changes
-        """
-        super().apply_changes()
-        
-        # look up the numerical clock mod from the text
-        self.clock_mod = CLOCK_RATIOS[self.clock_mod_txt]
-        
-        # make sure the euclidean limits are valid
-        # the rotation & number of triggers must always be <= the number of steps!
-        if self.e_rot > self.e_steps:
-            self.e_rot = 0
-        if self.e_trigs > self.e_steps:
-            self.e_trigs = self.e_steps
-            
-        # Choose the correct quantizer
-        if self.quantizer_key in QSCALES.keys():
-            self.quantizer = QSCALES[self.quantizer_key]
-        else:
-            self.quantizer = None
-        
-        self.__recalculate_pattern()
-        
     def __recalculate_pattern(self):
         """Recalculate the internal trigger pattern for this channel
 
@@ -343,38 +360,42 @@ class PamsOutput(MenuEditableObject):
         """
         pass
 
-class MenuItem:
-    def __init__(self, menu):
-        self.menu = menu 
-        
-    def on_click(self):
-        pass
-    
-    def draw(self):
-        pass
-
 class SettingChooser(MenuItem):
     """Menu UI element for displaying an option and the choices associated with it
     """
-    def __init__(self, title, options, dest_obj, dest_prop, menu):
+    def __init__(self, title, options, dest_obj, dest_prop, submenu=None, gfx=None, validate_settings=None):
         """Create a setting chooser for a given item
         
-        We use dest_obj.__setattr__(dest_prop, X) to set the new value. If this was C or C++
-        we could use a pointer, but that's not an option here so we're using a Pythony
-        work-around.
+        The dest_obj must implement __getitem__ and __setitem__, since this version of
+        micropython doesn't support __getattr__ and __setattr__.
+        
+        When the value is written to dest_obj we call
+        ```
+        dest_obj[dest_pro] = NEW_VALUE
+        ```
+        
+        Any validation must be done on the object end inside the __setitem__ implementation
 
         @param title  The title of this menu item
-        @param available_values  A list of available options to choose from
+        @param options  The available values we actually choose from
         @param dest_obj  The object whose property we're editing, e.g. a MasterClock instance
         @param dest_prop  The name of the attribute of dest_obj to edit.
-        @param menu  The Menu instance that this item belongs to
+        @param submenu  A list of SettingChooser items that make up this setting's submenu
+        @param gfx  A list of 12x12 pixel bitmaps we can optionally display beside option_txt
+        @param validate_settings  A function for this chooser to call that will return a new value for options
+               to ensure that we have the correct range.  Needed if setting X's options depend on the value of
+               setting Y
         """
-        MenuItem.__init__(self, menu)
         
         self.title = title
         self.options = options
+        self.option_gfx = gfx
         self.dest_obj = dest_obj
         self.dest_prop = dest_prop
+        
+        self.submenu = submenu
+        
+        self.validate_settings_fn = validate_settings
         
         self.is_writable = False
         
@@ -408,6 +429,9 @@ class SettingChooser(MenuItem):
         oled.text(f"{self.title}", 0, 0)
         
         if self.is_writable:
+            if self.validate_settings_fn:
+                self.options = self.validate_settings_fn()
+            
             # draw the selection in inverted text
             selected_item = k2.choice(self.options)
             choice_text = f"{selected_item}"
@@ -417,94 +441,68 @@ class SettingChooser(MenuItem):
             oled.text(choice_text, 1, SELECT_OPTION_Y+2, 0)
         else:
             # draw the selection in normal text
-            choice_text = f"{self.dest_obj.__getattr__(self.dest_prop)}"
+            choice_text = f"{self.dest_obj[self.dest_prop]}"
             oled.text(choice_text, 1, SELECT_OPTION_Y+2, 1)
         
         oled.show()
         
     def on_click(self):
-        MenuItem.on_click(self)
-        
         if self.is_writable:
             self.set_editable(False)
             selected_item = k2.choice(self.options)
         
-            self.dest_obj.__setattr(self.dest_prop, selected_item)
+            self.dest_obj[self.dest_prop] = selected_item
             self.dest_obj.apply_changes()
         else:
             self.set_editable(True)
-        
 
-class Menu:
-    """Generic menu object
-    """
-    def __init__(self):
-        self.items = []
-        self.active_item = None
-        
-        # this menu's parent menu (if it exists)
-        self.parent = None
-        self.children = []
-        
-    def get_active_item(self):
-        return k1.choice(self.items)
-
-class TopLevelMenu(Menu):
+class PamsMenu:
     def __init__(self, script):
         """Create the top-level menu for the application
 
         @param script  The PamsWorkout object the meny belongs to
         """
-        Menu.__init__(self)
         
         self.pams_workout = script
         
-        self.children.append(ClockMenu(self, script.clock))
-        for i in range(len(script.channels)):
-            self.children.append(ChannelMenu(self, script.channels[i]))
-        
         self.items = [
-            SettingChooser("BPM", list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1)), script.clock, "bpm", self),
-            SettingChooser("CV1 Mod", CLOCK_MODS, script.channels[0], "clock_mod_txt", self),
-            SettingChooser("CV2 Mod", CLOCK_MODS, script.channels[1], "clock_mod_txt", self),
-            SettingChooser("CV3 Mod", CLOCK_MODS, script.channels[2], "clock_mod_txt", self),
-            SettingChooser("CV4 Mod", CLOCK_MODS, script.channels[3], "clock_mod_txt", self),
-            SettingChooser("CV5 Mod", CLOCK_MODS, script.channels[4], "clock_mod_txt", self),
-            SettingChooser("CV6 Mod", CLOCK_MODS, script.channels[5], "clock_mod_txt", self)
+            SettingChooser("BPM", list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1)), script.clock, "bpm", self, [
+                SettingChooser("Reset", [True, False], script.clock, "reset_on_start", self)
+            ])
         ]
+        for i in range(len(script.channels)):
+            self.items.append(SettingChooser(f"CV{i+1}|Clk Mod", CLOCK_MODS, script.channels[i], "clock_mod_txt", [
+                SettingChooser(f"CV{i+1}|Wave", WAVE_SHAPE_LABELS, script.channels[i], "wave_shape_txt", gfx=WAVE_SHAPE_IMGS),
+                SettingChooser(f"CV{i+1}|Ampl.", list(range(101)), script.channels[i], "amplitude"),
+                SettingChooser(f"CV{i+1}|Skip%", list(range(101)), script.channels[i], "skip_prob"),
+                SettingChooser(f"CV{i+1}|ESteps", list(range(33)), script.channels[i], "e_steps"),
+                SettingChooser(f"CV{i+1}|EPulses", list(range(33)), script.channels[i], "e_trigs",
+                               validate_settings = lambda:list(range(script.channels[i].e_steps+1))),
+                SettingChooser(f"CV{i+1}|ERot.", list(range(33)), script.channels[i], "e_rot",
+                               validate_settings = lambda:list(range(script.channels[i].e_steps+1))),
+                SettingChooser(f"CV{i+1}|Quant.", QUANTIZER_LABELS, script.channels[i], "quantizer_key")
+            ]))
+            
+        self.active_items = self.items
         
-        self.active_item = k1.choice(self.items)
+    def on_long_press(self):
+        # return the active item to the read-only state
+        item = k1.choice(self.active_items)
+        item.set_editable(False)
         
-class Submenu(Menu):
-    def __init__(self, parent):
-        Menu.__init__(self)
-        self.parent = parent
-        
-class ClockMenu(Submenu):
-    """Submenu for the main clock
-    """
-    def __init__(self, parent, clock):
-        Submenu.__init__(self, parent)
-        self.clock = clock
-        
-        self.items.append(
-            SettingChooser("Reset", [True, False], clock, "reset_on_start", self)
-        )
-    
-class ChannelMenu(Submenu):
-    """Submenu for a single CV channel
-    """
-    def __init__(self, parent, channel):
-        Submenu.__init__(self, parent)
-        self.channel = channel
-        
-        self.items.append(SettingChooser("Wave", WAVE_SHAPES, channel, "wave_shape_txt", self))
-        self.items.append(SettingChooser("Amplitude", list(range(0, 101)), channel, "amplitude", self))
-        self.items.append(SettingChooser("Skip %", list(range(0, 101)), channel, "skip_prob", self))
-        self.items.append(SettingChooser("Eucl. Steps", list(range(0, 33)), channel, "e_steps", self))
-        self.items.append(SettingChooser("Eucl. Pulses", list(range(0, 33)), channel, "e_trigs", self))
-        self.items.append(SettingChooser("Eucl. Rot.", list(range(0, 33)), channel, "e_rot", self))
-        self.items.append(SettingChooser("Quant.", QUANTIZERS, channel, "quantizer_key", self))
+        # toggle between the two menu levels
+        if self.active_items == self.items:
+            self.active_items = k1.choice(self.items).submenu
+        else:
+            self.active_items = self.items
+            
+    def on_click(self):
+        item = k1.choice(self.active_items)
+        item.on_click()
+            
+    def draw(self):
+        active_item = k1.choice(self.active_items)
+        active_item.draw()
 
 class PamsWorkout(EuroPiScript):
     """The main script for the Pam's Workout implementation
@@ -523,10 +521,7 @@ class PamsWorkout(EuroPiScript):
         self.clock = MasterClock(120, self.channels)
         
         ## The master top-level menu
-        self.main_menu = TopLevelMenu(self)
-        
-        ## The active menu the user is interacting with
-        self.active_menu = self.main_menu
+        self.main_menu = PamsMenu(self)
         
         @b1.handler
         def on_b1_press():
@@ -551,14 +546,10 @@ class PamsWorkout(EuroPiScript):
             if time.ticks_diff(now, b2.last_pressed()) > LONG_PRESS_MS:
                 # long press
                 # change between the main & sub menus
-                if self.active_menu == self.main_menu:
-                    self.active_menu = k1.choice(self.main_menu.children)
-                else:
-                    self.active_menu = self.main_menu
+                self.main_menu.on_long_press()
             else:
                 # short press
-                menu_item = self.active_menu.get_active_item()
-                menu_item.on_click()
+                self.main_menu.on_click()
             
         
     def load(self):
@@ -594,7 +585,7 @@ class PamsWorkout(EuroPiScript):
         self.load()
         
         while True:
-            self.active_menu.get_active_item().draw()
+            self.main_menu.draw()
     
 if __name__=="__main__":
     PamsWorkout().main()
