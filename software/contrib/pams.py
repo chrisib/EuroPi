@@ -11,8 +11,17 @@ Each channel supports the following options:
     - sine
     - triangle
     - random
-- amplitude %
+    - reset (trigger on clock stop)
+- amplitude %: height of the wave as a percentage of the maximum output voltage
 - width %: how wide is the wave
+    - PWM for square waves: 0% is always off, 100% is always on
+    - symmetry for triangle waves:
+        - 0  : |\
+        - 50 : /\
+        - 100: /|
+    - offset for random waves:
+        - output = rnd(0, 1) * MAX_VOLTS * amplitude% + MAX_VOLTS * width%
+    - ignored for sine waves
 - skip %: probability that any given trigger may skip (doesn't apply to sine/saw/ramp/triangle waves)
 - euclidean rhythms
     - estep: # of steps
@@ -130,7 +139,7 @@ WAVE_RESET = 4
 
 ## Available wave shapes
 WAVE_SHAPES = {
-    "Sq"  : WAVE_SQUARE,
+    "Squ"  : WAVE_SQUARE,
     "Tri" : WAVE_TRIANGLE,
     "Sin" : WAVE_SIN,
     "Rnd" : WAVE_RANDOM,
@@ -139,7 +148,7 @@ WAVE_SHAPES = {
 
 ## Ordered list of labels for the wave shape chooser menu
 WAVE_SHAPE_LABELS = [
-    "Sq",
+    "Squ",
     "Tri",
     "Sin",
     "Rnd",
@@ -530,8 +539,23 @@ class SettingChooser:
         """Draw the menu to the screen
         """
         
+        text_left = 0
+        
         oled.fill(0)
         oled.text(f"{self.title}", 0, 0)
+        
+        if self.option_gfx is not None:
+            # draw the option thumbnail to the screen
+            text_left = 14
+            if self.is_writable:
+                img = bytearray(k2.choice(self.option_gfx))
+            else:
+                key = self.dest_obj[self.dest_prop]
+                index = self.options.index(key)
+                img = bytearray(self.option_gfx[index])
+            imgFB = FrameBuffer(img, 12, 12, MONO_HLSB)
+            oled.blit(imgFB,0,SELECT_OPTION_Y)
+            
         
         if self.is_writable:
             if self.validate_settings_fn:
@@ -542,12 +566,12 @@ class SettingChooser:
             choice_text = f"{selected_item}"
             text_width = len(choice_text)*CHAR_WIDTH
             
-            oled.fill_rect(0, SELECT_OPTION_Y, text_width+3, CHAR_HEIGHT+4, 1)
-            oled.text(choice_text, 1, SELECT_OPTION_Y+2, 0)
+            oled.fill_rect(text_left, SELECT_OPTION_Y, text_left+text_width+3, CHAR_HEIGHT+4, 1)
+            oled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 0)
         else:
             # draw the selection in normal text
             choice_text = f"{self.dest_obj[self.dest_prop]}"
-            oled.text(choice_text, 1, SELECT_OPTION_Y+2, 1)
+            oled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 1)
         
         oled.show()
         

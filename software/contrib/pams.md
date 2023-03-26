@@ -27,6 +27,8 @@ clock multiplier or divider, chosen from the following:
 
 ## External CV Routing
 
+NOTE: THIS FEATURE IS NOT IMPLEMENTED YET!!
+
 Many of the master clock or per-channel configuration options have a `CV` option.  If
 this is selected, then the voltage used to control the given parameter.  A value of
 0V will be the equivalent of choosing the lowest option available, and a value of 10V
@@ -85,9 +87,10 @@ Each of the 6 CV output channels has the following options:
 
 The submenu for each CV output has the following options:
 
-- `Wave` -- the wave shape to output
+- `Wave` -- the wave shape to output. Square/Triangle/Sine/Random/Reset
 - `Ampl.` -- the maximum amplitude of the output as a percentage of the 10V
   hardware maximum
+- `Width` -- width of the resulting wave. See below
 - `Skip%` -- the probability that a square pulse or euclidean trigger
   will be skipped
 - `EStep` -- the number of steps in the euclidean rhythm. If zero, the
@@ -95,3 +98,14 @@ The submenu for each CV output has the following options:
 - `ETrig` -- the number of pulses in the euclidean rhythm
 - `ERot` -- rotation of the euclidean rhythm
 - `Quant` -- quantization scale
+
+The Reset wave fires only when the clock is stopped and can be used to help synchronize
+external modules (e.g. other sequencers, sequential switches, etc...)
+
+Effects of width control on different wave shapes:
+- Square: Duty cycle control. 0% is always off, 100% is always on
+- Triangle: Symmetry contro. 50% results in a symmetrical wave, 0% results in a saw wave,
+  100% results in a ramp
+- Sine: ignored
+- Random: offset voltage as a percentage of the maximum output
+- Reset: ignored
