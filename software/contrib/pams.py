@@ -25,7 +25,7 @@ Each channel supports the following options:
 
 from europi import *
 from europi_script import EuroPiScript
-from europi.contrib.quantizer import Quantizer
+from contrib.quantizer import Quantizer
 
 from machine import Timer
 
@@ -134,6 +134,12 @@ class MasterClock(MenuEditableObject):
     #  3 to properly support triplets
     PPQN = 48
     
+    ## The absolute slowest the clock can go
+    MIN_BPM = 1
+    
+    ## The absolute fastest the clock can go
+    MAX_BPM = 300
+    
     def __init__(self, bpm, channels):
         """Create the main clock to run at a given bpm
 
@@ -152,7 +158,7 @@ class MasterClock(MenuEditableObject):
         """Return a dict with the clock's parameters
         """
         return {
-            "bpm": self.bpm
+            "bpm": self.bpm,
             "reset_on_start": self.reset_on_start
         }
     
@@ -337,10 +343,20 @@ class PamsOutput(MenuEditableObject):
         """
         pass
 
-class SettingChooser:
+class MenuItem:
+    def __init__(self, menu):
+        self.menu = menu 
+        
+    def on_click(self):
+        pass
+    
+    def draw(self):
+        pass
+
+class SettingChooser(MenuItem):
     """Menu UI element for displaying an option and the choices associated with it
     """
-    def __init__(self, title, options, dest_obj, dest_prop):
+    def __init__(self, title, options, dest_obj, dest_prop, menu):
         """Create a setting chooser for a given item
         
         We use dest_obj.__setattr__(dest_prop, X) to set the new value. If this was C or C++
@@ -351,13 +367,19 @@ class SettingChooser:
         @param available_values  A list of available options to choose from
         @param dest_obj  The object whose property we're editing, e.g. a MasterClock instance
         @param dest_prop  The name of the attribute of dest_obj to edit.
+        @param menu  The Menu instance that this item belongs to
         """
+        MenuItem.__init__(self, menu)
+        
         self.title = title
         self.options = options
-        self.dest_obj = None
-        self.dest_prop = None
+        self.dest_obj = dest_obj
+        self.dest_prop = dest_prop
         
         self.is_writable = False
+        
+    def __str__(self):
+        return f"Setting Chooser for {dest_obj}.{dest_prop}"
         
     def reconfigure_options(self, options):
         """Reconfigure the the available options.
@@ -401,11 +423,16 @@ class SettingChooser:
         oled.show()
         
     def on_click(self):
-        self.set_editable(False)
-        selected_item = k2.choice(self.options)
+        MenuItem.on_click(self)
         
-        self.dest_obj.__setattr(self.dest_prop, selected_item)
-        self.dest_obj.apply_changes()
+        if self.is_writable:
+            self.set_editable(False)
+            selected_item = k2.choice(self.options)
+        
+            self.dest_obj.__setattr(self.dest_prop, selected_item)
+            self.dest_obj.apply_changes()
+        else:
+            self.set_editable(True)
         
 
 class Menu:
@@ -413,19 +440,14 @@ class Menu:
     """
     def __init__(self):
         self.items = []
-        
         self.active_item = None
         
-    def draw(self):
-        if self.active_item:
-            self.active_item.draw()
-        else:
-            oled.fill(0)
-            oled.show()
-            
-    def on_long_press():
-        if self.active_item:
-            self.active_item.on_long_press()
+        # this menu's parent menu (if it exists)
+        self.parent = None
+        self.children = []
+        
+    def get_active_item(self):
+        return k1.choice(self.items)
 
 class TopLevelMenu(Menu):
     def __init__(self, script):
@@ -437,20 +459,18 @@ class TopLevelMenu(Menu):
         
         self.pams_workout = script
         
-        self.submenus = [
-            ClockMenu(self, script.clock)
-        ]
+        self.children.append(ClockMenu(self, script.clock))
         for i in range(len(script.channels)):
-            self.submenus.append(ChannelMenu(self, script.channels[i]))
+            self.children.append(ChannelMenu(self, script.channels[i]))
         
         self.items = [
-            SettingChooser("BPM", list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1)), script.clock, "bpm"),
-            SettingChooser("CV1 Mod", CLOCK_MODS, script.channels[0], "clock_mod_txt"),
-            SettingChooser("CV2 Mod", CLOCK_MODS, script.channels[1], "clock_mod_txt"),
-            SettingChooser("CV3 Mod", CLOCK_MODS, script.channels[2], "clock_mod_txt"),
-            SettingChooser("CV4 Mod", CLOCK_MODS, script.channels[3], "clock_mod_txt"),
-            SettingChooser("CV5 Mod", CLOCK_MODS, script.channels[4], "clock_mod_txt"),
-            SettingChooser("CV6 Mod", CLOCK_MODS, script.channels[5], "clock_mod_txt")
+            SettingChooser("BPM", list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1)), script.clock, "bpm", self),
+            SettingChooser("CV1 Mod", CLOCK_MODS, script.channels[0], "clock_mod_txt", self),
+            SettingChooser("CV2 Mod", CLOCK_MODS, script.channels[1], "clock_mod_txt", self),
+            SettingChooser("CV3 Mod", CLOCK_MODS, script.channels[2], "clock_mod_txt", self),
+            SettingChooser("CV4 Mod", CLOCK_MODS, script.channels[3], "clock_mod_txt", self),
+            SettingChooser("CV5 Mod", CLOCK_MODS, script.channels[4], "clock_mod_txt", self),
+            SettingChooser("CV6 Mod", CLOCK_MODS, script.channels[5], "clock_mod_txt", self)
         ]
         
         self.active_item = k1.choice(self.items)
@@ -459,7 +479,6 @@ class Submenu(Menu):
     def __init__(self, parent):
         Menu.__init__(self)
         self.parent = parent
-        self.parent.child = self
         
 class ClockMenu(Submenu):
     """Submenu for the main clock
@@ -469,7 +488,7 @@ class ClockMenu(Submenu):
         self.clock = clock
         
         self.items.append(
-            SettingChooser("Reset", [True, False], clock, "reset_on_start")
+            SettingChooser("Reset", [True, False], clock, "reset_on_start", self)
         )
     
 class ChannelMenu(Submenu):
@@ -479,13 +498,13 @@ class ChannelMenu(Submenu):
         Submenu.__init__(self, parent)
         self.channel = channel
         
-        self.items.append(SettingChooser("Wave", WAVE_SHAPES, channel, "wave_shape_txt"))
-        self.items.append(SettingChooser("Amplitude", list(range(0, 101)), channel, "amplitude"))
-        self.items.append(SettingChooser("Skip %", list(range(0, 101)), channel, "skip_prob"))
-        self.items.append(SettingChooser("Eucl. Steps", list(range(0, 33)), channel, "e_steps"))
-        self.items.append(SettingChooser("Eucl. Pulses", list(range(0, 33)), channel, "e_trigs"))
-        self.items.append(SettingChooser("Eucl. Rot.", list(range(0, 33)), channel, "e_rot"))
-        self.items.append(SettingChooser("Quant.", QUANTIZERS, channel, "quantizer_key"))
+        self.items.append(SettingChooser("Wave", WAVE_SHAPES, channel, "wave_shape_txt", self))
+        self.items.append(SettingChooser("Amplitude", list(range(0, 101)), channel, "amplitude", self))
+        self.items.append(SettingChooser("Skip %", list(range(0, 101)), channel, "skip_prob", self))
+        self.items.append(SettingChooser("Eucl. Steps", list(range(0, 33)), channel, "e_steps", self))
+        self.items.append(SettingChooser("Eucl. Pulses", list(range(0, 33)), channel, "e_trigs", self))
+        self.items.append(SettingChooser("Eucl. Rot.", list(range(0, 33)), channel, "e_rot", self))
+        self.items.append(SettingChooser("Quant.", QUANTIZERS, channel, "quantizer_key", self))
 
 class PamsWorkout(EuroPiScript):
     """The main script for the Pam's Workout implementation
@@ -503,7 +522,11 @@ class PamsWorkout(EuroPiScript):
         ]
         self.clock = MasterClock(120, self.channels)
         
-        self.menu = TopLevelMenu(self)
+        ## The master top-level menu
+        self.main_menu = TopLevelMenu(self)
+        
+        ## The active menu the user is interacting with
+        self.active_menu = self.main_menu
         
         @b1.handler
         def on_b1_press():
@@ -527,12 +550,15 @@ class PamsWorkout(EuroPiScript):
             now = time.ticks_ms()
             if time.ticks_diff(now, b2.last_pressed()) > LONG_PRESS_MS:
                 # long press
-                # TODO
-                pass
+                # change between the main & sub menus
+                if self.active_menu == self.main_menu:
+                    self.active_menu = k1.choice(self.main_menu.children)
+                else:
+                    self.active_menu = self.main_menu
             else:
                 # short press
-                # TODO
-                pass
+                menu_item = self.active_menu.get_active_item()
+                menu_item.on_click()
             
         
     def load(self):
@@ -568,7 +594,7 @@ class PamsWorkout(EuroPiScript):
         self.load()
         
         while True:
-            pass
+            self.active_menu.get_active_item().draw()
     
 if __name__=="__main__":
     PamsWorkout().main()
