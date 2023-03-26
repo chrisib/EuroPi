@@ -32,6 +32,9 @@ from machine import Timer
 import time
 import random
 
+SELECT_OPTION_Y = 16
+HALF_CHAR_WIDTH = int(CHAR_WIDTH / 2)
+
 ## The scales that each PamsOutput can quantize to
 QSCALES = {
     #                        C      C#     D      D#     E      F      F#     G      G#     A      A#     B
@@ -53,7 +56,15 @@ QSCALES = {
 ## How many ms does a button need to be held to qualify as a long press?
 LONG_PRESS_MS = 500
 
-class MasterClock:
+class MenuEditableObject:
+    """An object that can be dynamically edited via the UI menu
+    """
+    def apply_changes(self):
+        """Reimplement this in every inherited class
+        """
+        pass
+
+class MasterClock(MenuEditableObject):
     """The main clock that ticks and runs the outputs
     """
     
@@ -120,6 +131,12 @@ class MasterClock:
             self.is_running = False
             self.timer.deinit()
         
+    def apply_changes(self):
+        """If we've changed anything via the menu, recalculate the necessary changes
+        """
+        super().apply_changes()
+        self.__recalcualte_ticks()
+        
     def __recalculate_ticks(self):
         """Recalculate the number of ms per tick
 
@@ -136,7 +153,7 @@ class MasterClock:
         self.bpm = bpm
         self.__recalculate_ticks()
 
-class PamsOutput:
+class PamsOutput(MenuEditableObject):
     """Controls a single output jack
     """
     
@@ -181,6 +198,8 @@ class PamsOutput:
         ## Probability that we skip an output [0-1]
         self.skip_prob = 0.0
         
+        self.__recalculate_pattern()
+        
     def to_dict(self):
         """Return a dictionary with all the configurable settings to write to disk
         """
@@ -208,7 +227,15 @@ class PamsOutput:
         self.wave = settings["wave"]
         self.quantizer_index = settings["quant"]
         
-    def recalculate_pattern(self):
+        self.recalculate_pattern()
+        
+    def apply_changes(self):
+        """If we've changed anything via the menu, recalculate the necessary changes
+        """
+        super().apply_changes()
+        self.__recalculate_pattern()
+        
+    def __recalculate_pattern(self):
         """Recalculate the internal trigger pattern for this channel
 
         Every time we tick we just set the output level according to the pre-computed
@@ -225,6 +252,76 @@ class PamsOutput:
         """Advance the current pattern one tick
         """
         pass
+
+class SettingChooser:
+    """Menu UI element for displaying an option and the choices associated with it
+    """
+    def __init__(self):
+        self.title = ""
+        self.options = []
+        self.value = None
+        self.dest_obj = None
+        self.dest_prop = None
+        
+        self.is_writable = False
+        
+    def reconfigure(self, title, current_value, available_values, dest_obj, dest_prop):
+        """Reconfigure the UI to display a particular setting
+
+        We use dest_obj.__setattr__(dest_prop, X) to set the new value. If this was C or C++
+        we could use a pointer, but that's not an option here so we're using a Pythony
+        work-around.
+
+        @param title  The title of this menu item
+        @param current_value  The current value of the option
+        @param available_values  A list of available options to choose from
+        @param dest_obj  The object whose property we're editing, e.g. a MasterClock instance
+        @param dest_prop  The name of the attribute of dest_obj to edit.
+        """
+        
+        self.title = title
+        self.value = current_value
+        self.options = available_values
+        self.dest_obj = dest_obj
+        self.dest_prop = dest_prop
+        
+    def set_editable(self, can_edit):
+        """Set whether or not we can write to this setting
+        
+        @param can_edit  If True, we can write a new value
+        """
+        
+        self.is_writable = can_edit
+        
+    def draw(self):
+        """Draw the menu to the screen
+        """
+        
+        oled.fill(0)
+        oled.text(f"{self.title}", 0, 0)
+        
+        if self.is_writable:
+            # draw the selection in inverted text
+            selected_item = k2.choice(self.options)
+            choice_text = f"{selected_item}"
+            text_width = len(choice_text)*CHAR_WIDTH
+            
+            oled.fill_rect(0, SELECT_OPTION_Y, text_width+3, CHAR_HEIGHT+4, 1)
+            oled.text(choice_text, 1, SELECT_OPTION_Y+2, 0)
+        else:
+            # draw the selection in normal text
+            choice_text = f"{self.dest_obj.__getattr__(self.dest_prop)}"
+            oled.text(choice_text, 1, SELECT_OPTION_Y+2, 1)
+        
+        oled.show()
+        
+    def on_click(self):
+        self.set_editable(False)
+        selected_item = k2.choice(self.options)
+        
+        self.dest_obj.__setattr(self.dest_prop, selected_item)
+        self.dest_obj.apply_changes()
+        
 
 class PamsWorkout(EuroPiScript):
     """The main script for the Pam's Workout implementation
