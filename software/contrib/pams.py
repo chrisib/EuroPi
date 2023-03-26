@@ -32,6 +32,8 @@ Each channel supports the following options:
 
 from europi import *
 from europi_script import EuroPiScript
+
+from contrib.euclid import generate_euclidean_pattern
 from contrib.quantizer import Quantizer
 
 from machine import Timer
@@ -88,9 +90,7 @@ CLOCK_MODS = {
     "/6" : 1/6.0,
     "/8" : 1/8.0,
     "/12" : 1/12.0,
-    "/16" : 1/16.0,
-    "/24" : 1/24.0,
-    "/32" : 1/32.0
+    "/16" : 1/16.0
 }
 
 ## Sorted list of labels for the clock modifers to display
@@ -107,9 +107,7 @@ CLOCK_MOD_LABELS = [
     "/6",
     "/8",
     "/12",
-    "/16",
-    "/24",
-    "/32"
+    "/16"
 ]
 
 ## Standard pulse/square wave with PWM
@@ -177,11 +175,11 @@ class MasterClock:
     ## The clock actually runs faster than its maximum BPM to allow
     #  clock divisions to work nicely
     #
-    #  Use 48 internal clock pulses per quarter note. This is slow enough
+    #  Use 24 internal clock pulses per quarter note. This is slow enough
     #  that we won't choke the CPU with interrupts, but smooth enough that we
     #  should be able to approximate complex waves.  Must be a multiple of
     #  3 to properly support triplets
-    PPQN = 48
+    PPQN = 24
     
     ## The absolute slowest the clock can go
     MIN_BPM = 1
@@ -304,6 +302,13 @@ class PamsOutput:
     """Controls a single output jack
     """
     
+    ## The maximum length of a Euclidean pattern we allow
+    #
+    #  Because we need to generate the whole sequence at whatever our PPQN is
+    #  with a potentially very slow clock mod, this cannot be too high to avoid
+    #  issues with RAM usage
+    MAX_EUCLID_LENGTH = 16
+    
     def __init__(self, cv_out):
         """Create a new output to control a single cv output
         
@@ -345,6 +350,15 @@ class PamsOutput:
         
         ## Probability that we skip an output [0-100]
         self.skip = 0
+        
+        ## The position we're currently playing inside playback_pattern
+        self.playback_position = 0
+        
+        ## The pre-calculated waveform we step through during playback
+        self.playback_pattern = [0]
+        
+        ## The previous voltage we output
+        self.prevous_voltage = 0
         
         self.__recalculate_pattern()
         
@@ -458,21 +472,54 @@ class PamsOutput:
         
     def __recalculate_pattern(self):
         """Recalculate the internal trigger pattern for this channel
-
-        Every time we tick we just set the output level according to the pre-computed
-        pattern
         """
-        pass
+        
+        # always assume we're doing some kind of euclidean pattern
+        e_pattern = [1]
+        if self.e_step > 0:
+            e_pattern = generate_euclidean_pattern(self.e_step, self.e_trig, self.e_rot)
+            
+        # determine the number of clock pulses in the whole pattern
+        pulses = round(MasterClock.PPQN / self.clock_mod * len(e_pattern))
+        
+        samples = [0] * pulses
+        
+        # TODO more math here
+        
+        self.playback_position = self.playback_position % len(samples)
+        self.playback_pattern = samples
     
     def reset(self):
         """Reset the current output to the beginning
         """
-        pass
+        self.playback_position = 0
     
     def tick(self):
-        """Advance the current pattern one tick
+        """Advance the current pattern one tick and set the output voltage
         """
-        pass
+        
+        out_volts = self.previous_voltage
+        
+        # will we need to skip this step?
+        # not necessarily needed all the time, but easiest to calculate once
+        do_skip = random.randint(0, 100) < self.skip
+        
+        # advance the playback position to the next sample
+        self.playback_position = self.playback_position + 1
+            if self.playback_postion >= len(self.playback_pattern):
+                self.playback_position = 0
+        
+        if self.wave == WAVE_RANDOM:
+            # generate a new voltage whenever the pattern repeats itself
+            if self.playback_position == 0:
+                out_volts = MAX_OUTPUT_VOLTAGE * random.random() * (self.amplitude / 100.0) + MAX_OUTPUT_VOLTAGE * (self.width / 100.0)
+        else:
+            out_volts = self.playback_pattern[self.playback_position]
+        
+        self.cv_out.voltage(out_volts)
+        
+        # save the new voltage for the next tick's previous
+        self.previous_voltage = out_volts
 
 class SettingChooser:
     """Menu UI element for displaying an option and the choices associated with it
@@ -603,10 +650,10 @@ class PamsMenu:
                 SettingChooser(f"CV{i+1} | Wave", WAVE_SHAPE_LABELS, script.channels[i], "wave_shape_txt", gfx=WAVE_SHAPE_IMGS),
                 SettingChooser(f"CV{i+1} | Ampl.", list(range(101)), script.channels[i], "amplitude"),
                 SettingChooser(f"CV{i+1} | Skip%", list(range(101)), script.channels[i], "skip"),
-                SettingChooser(f"CV{i+1} | ESteps", list(range(33)), script.channels[i], "e_step"),
-                SettingChooser(f"CV{i+1} | EPulses", list(range(33)), script.channels[i], "e_trig",
+                SettingChooser(f"CV{i+1} | ESteps", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_step"),
+                SettingChooser(f"CV{i+1} | EPulses", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_trig",
                                validate_settings = lambda:list(range(script.channels[i].e_step+1))),
-                SettingChooser(f"CV{i+1} | ERot.", list(range(33)), script.channels[i], "e_rot",
+                SettingChooser(f"CV{i+1} | ERot.", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_rot",
                                validate_settings = lambda:list(range(script.channels[i].e_step+1))),
                 SettingChooser(f"CV{i+1} | Quant.", QUANTIZER_LABELS, script.channels[i], "quantizer_txt")
             ]))
