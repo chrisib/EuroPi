@@ -37,7 +37,7 @@ HALF_CHAR_WIDTH = int(CHAR_WIDTH / 2)
 LONG_PRESS_MS = 500
 
 ## The scales that each PamsOutput can quantize to
-QSCALES = {
+QUANTIZERS = {
     #                        C      C#     D      D#     E      F      F#     G      G#     A      A#     B
     "Chromatic" : Quantizer([True,  True,  True,  True,  True,  True,  True,  True,  True,  True,  True,  True]),
     
@@ -129,18 +129,18 @@ WAVE_RANDOM = 3
 WAVE_RESET = 4
 
 ## Available wave shapes
-WAVE_SHAPES = [
-    WAVE_SQUARE,
-    WAVE_TRIANGLE,
-    WAVE_SIN,
-    WAVE_RANDOM,
-    WAVE_RESET
-]
+WAVE_SHAPES = {
+    "Sq"  : WAVE_SQUARE,
+    "Tri" : WAVE_TRIANGLE,
+    "Sin" : WAVE_SIN,
+    "Rnd" : WAVE_RANDOM,
+    "Rst" : WAVE_RESET
+}
 
-
+## Ordered list of labels for the wave shape chooser menu
 WAVE_SHAPE_LABELS = [
-    "Sq.",
-    "Tri.",
+    "Sq",
+    "Tri",
     "Sin",
     "Rnd",
     "Rst"
@@ -148,7 +148,11 @@ WAVE_SHAPE_LABELS = [
 
 ## Sorted list of wave shapes to display
 #
-#  These are 12x12 bitmaps
+#  Same order as WAVE_SHAPE_LABELS
+#
+#  These are 12x12 bitmaps. See:
+#  - https://github.com/Allen-Synthesis/EuroPi/blob/main/software/oled_tips.md
+#  - https://github.com/novaspirit/img2bytearray
 WAVE_SHAPE_IMGS = [
     b'\xfe\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x83\xf0',
     b'\x06\x00\x06\x00\t\x00\t\x00\x10\x80\x10\x80 @ @@ @ \x80\x10\x80\x10',
@@ -207,7 +211,38 @@ class MasterClock:
         self.reset_on_start = settings["reset_on_start"]
         self.__recalculate_ticks()
         
+    def __getitem__(self, key):
+        """Equivalent of __getattr__ for values that can be set by the SettingChooser
+
+        @param key  The name of the attribute we're getting
+        
+        @raises KeyError if the key is invalid
+        """
+        if key == "bpm":
+            return self.bpm
+        elif key == "reset_on_start":
+            return self.reset_on_start
+        else:
+            raise KeyError(f"Key \"{key}\" is not valid")
+        
+    def __setitem__(self, key, value):
+        """Equivalent of __setattr__ for values that can be set by the SettingChooser
+
+        @param key  The name of the attribute we're setting
+        @param value  The value we're assigning
+        
+        @raises KeyError if the key is invalid
+        """
+        if key == "bpm":
+            self.change_bpm(value)
+        elif key == "reset_on_start":
+            self.reset_on_start = value
+        else:
+            raise KeyError(f"Key \"{key}\" is not valid")
+        
     def on_tick(self, timer):
+        """Callback function for the timer's tick
+        """
         for ch in self.channels:
             ch.tick()
         
@@ -233,11 +268,11 @@ class MasterClock:
             # Fire a reset trigger on any channels that have the WAVE_RESET mode set
             # This trigger lasts 10ms
             for ch in self.channels:
-                if ch.wave == WAVE_RESET:
+                if ch.wave_shape == WAVE_RESET:
                     ch.cv_out.voltage(MAX_OUTPUT_VOLTAGE * ch.amplitude / 100.0)
             time.sleep(10)
             for ch in self.channels:
-                if ch.wave == WAVE_RESET:
+                if ch.wave_shape == WAVE_RESET:
                     ch.cv_out.voltage(0)
         
     def __recalculate_ticks(self):
@@ -269,8 +304,8 @@ class PamsOutput:
         
         ## What quantization are we using?
         #
-        #  See contrib.pams.QSCALES
-        self.quantizer_key = "None"
+        #  See contrib.pams.QUANTIZERS
+        self.quantizer_txt = "None"
         self.quantizer = None
         
         ## The clock modifier for this channel
@@ -278,29 +313,29 @@ class PamsOutput:
         #  - 1.0 is the same as the main clock's BPM
         #  - <1.0 will tick slower than the BPM (e.g. 0.5 will tick once every 2 beats)
         #  - >1.0 will tick faster than the BPM (e.g. 3.0 will tick 3 times per beat)
-        self.clock_mod = 1.0
         self.clock_mod_txt = "x1"
+        self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
         
         ## What shape of wave are we generating?
         #
         #  For now, stick to square waves for triggers & gates
-        self.wave = WAVE_SQUARE
-        self.wave_shape_txt = "Wave"
+        self.wave_shape = WAVE_SQUARE
+        self.wave_shape_txt = WAVE_SHAPE_LABELS[self.wave_shape]
         
         ## The amplitude of the output as a [0, 100] percentage
         self.amplitude = 50   # default to 5V gates
         
         ## Euclidean -- number of steps in the pattern (0 = disabled)
-        self.e_steps = 0
+        self.e_step = 0
         
         ## Euclidean -- number of triggers in the pattern
-        self.e_trigs = 0
+        self.e_trig = 0
         
         ## Euclidean -- rotation of the pattern
         self.e_rot = 0
         
-        ## Probability that we skip an output [0-1]
-        self.skip_prob = 0.0
+        ## Probability that we skip an output [0-100]
+        self.skip = 0
         
         self.__recalculate_pattern()
         
@@ -309,13 +344,13 @@ class PamsOutput:
         """
         return {
             "clock_mod" : self.clock_mod_txt,
-            "e_step"    : self.e_steps,
-            "e_trigs"   : self.e_trigs,
+            "e_step"    : self.e_step,
+            "e_trig"   : self.e_trig,
             "e_rot"     : self.e_rot,
-            "skip"      : self.skip_prob,
+            "skip"      : self.skip,
             "wave"      : self.wave_shape_txt,
             "amplitude" : self.amplitude,
-            "quant"     : self.quantizer_key
+            "quant"     : self.quantizer_txt
         }
     
     def load_settings(self, settings):
@@ -327,20 +362,90 @@ class PamsOutput:
         self.clock_mod_txt = settings["clock_mod"]
         self.clock_mod = CLOCK_RATIOS[self.clock_mod_txt]
         self.e_step = settings["e_step"]
-        self.e_trigs = settings["e_trigs"]
+        self.e_trig = settings["e_trig"]
         self.e_rot = settings["e_rot"]
         self.skip = settings["skip"]
         self.wave_shape_txt = settings["wave"]
-        self.wave = WAVE_SHAPE_IDS[self.wave_shape_txt]
+        self.wave_shape = WAVE_SHAPES[self.wave_shape_txt]
         self.amplitude = settings["amplitude"]
-        self.quantizer_key = settings["quant"]
+        self.quantizer_txt = settings["quant"]
         
-        if self.quantizer_key in QSCALES.keys():
-            self.quantizer = QSCALES[self.quantizer_key]
+        if self.quantizer_txt in QUANTIZERS.keys():
+            self.quantizer = QUANTIZERS[self.quantizer_txt]
         else:
             self.quantizer = None
         
         self.recalculate_pattern()
+        
+    def __getitem__(self, key):
+        """Equivalent of __setattr__ for values that can be set by the SettingChooser
+
+        @param key  The name of the attribute we're getting
+        
+        @raises KeyError if the key is invalid
+        """
+        if key == "clock_mod_txt":
+            return self.clock_mod_txt
+        elif key == "e_step":
+            return self.e_step
+        elif key == "e_trig":
+            return self.e_trig
+        elif key == "e_rot":
+            return self.e_rot
+        elif key == "skip":
+            return self.skip
+        elif key == "wave_shape_txt":
+            return self.wave_shape_txt
+        elif key == "amplitude":
+            return self.amplitude
+        elif key == "quantizer_txt":
+            return self.quantizer_txt
+        else:
+            raise KeyError(f"Key \"{key}\" is not valid")
+        
+    def __setitem__(self, key, value):
+        """Equivalent of __setattr__ for values that can be set by the SettingChooser
+
+        @param key  The name of the attribute we're setting
+        @param value  The value we're assigning
+        
+        @raises KeyError if the key is invalid
+        """
+        if key == "clock_mod_txt":
+            self.clock_mod_txt = value
+            self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
+            self.__recalculate_pattern()
+        elif key == "e_step":
+            self.e_step = value
+            # make sure the number of pulses & rotation are still valid!
+            if self.e_trig > self.e_step:
+                self.e_trig = self.e_step
+            if self.e_rot > self.e_step:
+                self.e_rot = self.e_step
+            self.__recalculate_pattern()
+        elif key == "e_trig":
+            self.e_trig = value
+            self.__recalculate_pattern()
+        elif key == "e_rot":
+            self.e_rot = value
+            self.__recalculate_pattern()
+        elif key == "skip":
+            self.skip = value
+        elif key == "wave_shape_txt":
+            self.wave_shape_txt = value
+            self.wave_shape = WAVE_SHAPES[self.wave_shape_txt]
+            self.__recalculate_pattern()
+        elif key == "amplitude":
+            self.amplitude = value
+            self.__recalculate_pattern()
+        elif key == "quantizer_txt":
+            self.quantizer_txt = value
+            if value in QUANTIZERS.keys():
+                self.quantizer = QUANTIZERS[self.quantizer_txt]
+            else:
+                self.quantizer = None
+        else:
+            raise KeyError(f"Key \"{key}\" is not valid")
         
     def __recalculate_pattern(self):
         """Recalculate the internal trigger pattern for this channel
@@ -360,7 +465,7 @@ class PamsOutput:
         """
         pass
 
-class SettingChooser(MenuItem):
+class SettingChooser:
     """Menu UI element for displaying an option and the choices associated with it
     """
     def __init__(self, title, options, dest_obj, dest_prop, submenu=None, gfx=None, validate_settings=None):
@@ -452,7 +557,6 @@ class SettingChooser(MenuItem):
             selected_item = k2.choice(self.options)
         
             self.dest_obj[self.dest_prop] = selected_item
-            self.dest_obj.apply_changes()
         else:
             self.set_editable(True)
 
@@ -466,29 +570,35 @@ class PamsMenu:
         self.pams_workout = script
         
         self.items = [
-            SettingChooser("BPM", list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1)), script.clock, "bpm", self, [
-                SettingChooser("Reset", [True, False], script.clock, "reset_on_start", self)
+            SettingChooser("BPM", list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1)), script.clock, "bpm", [
+                SettingChooser("Reset", [True, False], script.clock, "reset_on_start")
             ])
         ]
         for i in range(len(script.channels)):
-            self.items.append(SettingChooser(f"CV{i+1}|Clk Mod", CLOCK_MODS, script.channels[i], "clock_mod_txt", [
-                SettingChooser(f"CV{i+1}|Wave", WAVE_SHAPE_LABELS, script.channels[i], "wave_shape_txt", gfx=WAVE_SHAPE_IMGS),
-                SettingChooser(f"CV{i+1}|Ampl.", list(range(101)), script.channels[i], "amplitude"),
-                SettingChooser(f"CV{i+1}|Skip%", list(range(101)), script.channels[i], "skip_prob"),
-                SettingChooser(f"CV{i+1}|ESteps", list(range(33)), script.channels[i], "e_steps"),
-                SettingChooser(f"CV{i+1}|EPulses", list(range(33)), script.channels[i], "e_trigs",
-                               validate_settings = lambda:list(range(script.channels[i].e_steps+1))),
-                SettingChooser(f"CV{i+1}|ERot.", list(range(33)), script.channels[i], "e_rot",
-                               validate_settings = lambda:list(range(script.channels[i].e_steps+1))),
-                SettingChooser(f"CV{i+1}|Quant.", QUANTIZER_LABELS, script.channels[i], "quantizer_key")
+            self.items.append(SettingChooser(f"CV{i+1} | Clk Mod", CLOCK_MOD_LABELS, script.channels[i], "clock_mod_txt", [
+                SettingChooser(f"CV{i+1} | Wave", WAVE_SHAPE_LABELS, script.channels[i], "wave_shape_txt", gfx=WAVE_SHAPE_IMGS),
+                SettingChooser(f"CV{i+1} | Ampl.", list(range(101)), script.channels[i], "amplitude"),
+                SettingChooser(f"CV{i+1} | Skip%", list(range(101)), script.channels[i], "skip"),
+                SettingChooser(f"CV{i+1} | ESteps", list(range(33)), script.channels[i], "e_step"),
+                SettingChooser(f"CV{i+1} | EPulses", list(range(33)), script.channels[i], "e_trig",
+                               validate_settings = lambda:list(range(script.channels[i].e_step+1))),
+                SettingChooser(f"CV{i+1} | ERot.", list(range(33)), script.channels[i], "e_rot",
+                               validate_settings = lambda:list(range(script.channels[i].e_step+1))),
+                SettingChooser(f"CV{i+1} | Quant.", QUANTIZER_LABELS, script.channels[i], "quantizer_txt")
             ]))
             
         self.active_items = self.items
         
+        self.editing_now = None
+        
     def on_long_press(self):
         # return the active item to the read-only state
-        item = k1.choice(self.active_items)
-        item.set_editable(False)
+        if self.editing_now is None:
+            item = k1.choice(self.active_items)
+            item.set_editable(False)
+        else:
+            self.editing_now.set_editable(False)
+            self.editing_now = None
         
         # toggle between the two menu levels
         if self.active_items == self.items:
@@ -497,12 +607,22 @@ class PamsMenu:
             self.active_items = self.items
             
     def on_click(self):
-        item = k1.choice(self.active_items)
-        item.on_click()
+        if self.editing_now is None:
+            item = k1.choice(self.active_items)
+            item.on_click()
+            if item.is_writable:
+                self.editing_now = item
+        else:
+            self.editing_now.on_click()
+            if not self.editing_now.is_writable:
+                self.editing_now = None
             
     def draw(self):
-        active_item = k1.choice(self.active_items)
-        active_item.draw()
+        if self.editing_now is None:
+            active_item = k1.choice(self.active_items)
+            active_item.draw()
+        else:
+            self.editing_now.draw()
 
 class PamsWorkout(EuroPiScript):
     """The main script for the Pam's Workout implementation
