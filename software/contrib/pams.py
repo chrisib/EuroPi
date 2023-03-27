@@ -534,7 +534,7 @@ class PamsOutput:
                             samples.append(0.0)
                     elif self.wave_shape == WAVE_TRIANGLE:
                         rising_ticks = round(ticks_per_note * self.width / 100.0)
-                        falling_ticks = ticks_per_note - falling_ticks
+                        falling_ticks = ticks_per_note - rising_ticks
                         
                         peak_volts = MAX_OUTPUT_VOLTAGE * self.amplitude / 100.0
                         
@@ -887,4 +887,3 @@ class PamsWorkout(EuroPiScript):
     
 if __name__=="__main__":
     PamsWorkout().main()
-
