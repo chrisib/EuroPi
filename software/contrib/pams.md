@@ -6,7 +6,7 @@ main clock generator, euclidean rhythm generator, clocked LFO, clocked
 random voltage source, etc... with optional quantization.
 
 The module itself will generate the master clock signal with a configurable
-BPM (TODO: define the range!).  Each output has an independently controlled
+BPM (1-300 BPM supported).  Each output has an independently controlled
 clock multiplier or divider, chosen from the following:
 
 ```
@@ -104,7 +104,7 @@ external modules (e.g. other sequencers, sequential switches, etc...)
 
 Effects of width control on different wave shapes:
 - Square: Duty cycle control. 0% is always off, 100% is always on
-- Triangle: Symmetry contro. 50% results in a symmetrical wave, 0% results in a saw wave,
+- Triangle: Symmetry control. 50% results in a symmetrical wave, 0% results in a saw wave,
   100% results in a ramp
 - Sine: ignored
 - Random: offset voltage as a percentage of the maximum output
