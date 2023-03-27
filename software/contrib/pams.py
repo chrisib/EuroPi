@@ -203,7 +203,7 @@ class MasterClock:
         self.reset_on_start = True
         self.channels = channels
         self.timer = Timer()
-        self.__recalculate_ticks()
+        self.recalculate_ticks()
         
     def to_dict(self):
         """Return a dict with the clock's parameters
@@ -220,7 +220,7 @@ class MasterClock:
         """
         self.bpm = settings["bpm"]
         self.reset_on_start = settings["reset_on_start"]
-        self.__recalculate_ticks()
+        self.recalculate_ticks()
         
     def __getitem__(self, key):
         """Equivalent of __getattr__ for values that can be set by the SettingChooser
@@ -286,7 +286,7 @@ class MasterClock:
                 if ch.wave_shape == WAVE_RESET:
                     ch.cv_out.voltage(0)
         
-    def __recalculate_ticks(self):
+    def recalculate_ticks(self):
         """Recalculate the number of ms per tick
 
         If the timer is currently running deinitialize it and reset it to use the correct BPM
@@ -301,7 +301,7 @@ class MasterClock:
         
     def change_bpm(self, new_bpm):
         self.bpm = new_bpm
-        self.__recalculate_ticks()
+        self.recalculate_ticks()
 
 class PamsOutput:
     """Controls a single output jack
@@ -373,9 +373,13 @@ class PamsOutput:
         self.next_pattern = None
         
         ## The previous voltage we output
-        self.prevous_voltage = 0
+        self.previous_voltage = 0
         
-        self.__recalculate_pattern()
+        ## Used during the tick() function to store whether or not we're skipping
+        #  the current step
+        self.skip_this_step = False
+        
+        self.recalculate_pattern()
         
     def to_dict(self):
         """Return a dictionary with all the configurable settings to write to disk
@@ -415,7 +419,7 @@ class PamsOutput:
         else:
             self.quantizer = None
         
-        self.__recalculate_pattern()
+        self.recalculate_pattern()
         
     def __getitem__(self, key):
         """Equivalent of __setattr__ for values that can be set by the SettingChooser
@@ -456,7 +460,7 @@ class PamsOutput:
         if key == "clock_mod_txt":
             self.clock_mod_txt = value
             self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
-            self.__recalculate_pattern()
+            self.recalculate_pattern()
         elif key == "e_step":
             self.e_step = value
             # make sure the number of pulses & rotation are still valid!
@@ -464,25 +468,24 @@ class PamsOutput:
                 self.e_trig = self.e_step
             if self.e_rot > self.e_step:
                 self.e_rot = self.e_step
-            self.__recalculate_pattern()
+            self.recalculate_pattern()
         elif key == "e_trig":
             self.e_trig = value
-            self.__recalculate_pattern()
+            self.recalculate_pattern()
         elif key == "e_rot":
             self.e_rot = value
-            self.__recalculate_pattern()
+            self.recalculate_pattern()
         elif key == "skip":
             self.skip = value
         elif key == "wave_shape_txt":
             self.wave_shape_txt = value
             self.wave_shape = WAVE_SHAPES[self.wave_shape_txt]
-            self.__recalculate_pattern()
+            self.recalculate_pattern()
         elif key == "amplitude":
             self.amplitude = value
-            self.__recalculate_pattern()
         elif key == "width":
             self.width = value
-            self.__recalculate_pattern()
+            self.recalculate_pattern()
         elif key == "quantizer_txt":
             self.quantizer_txt = value
             if value in QUANTIZERS.keys():
@@ -492,8 +495,11 @@ class PamsOutput:
         else:
             raise KeyError(f"Key \"{key}\" is not valid")
         
-    def __recalculate_pattern(self):
+    def recalculate_pattern(self):
         """Recalculate the internal trigger pattern for this channel
+
+        The generated pattern has values in the range [0, 1] which can be multiplied
+        by the amplitude and output voltage to produce the correct output
         """
         
         # always assume we're doing some kind of euclidean pattern
@@ -529,34 +535,34 @@ class PamsOutput:
                     elif self.wave_shape == WAVE_SQUARE:
                         duty_cycle = ticks_per_note * self.width / 100.0
                         if tick < duty_cycle:
-                            samples.append(MAX_OUTPUT_VOLTAGE * self.amplitude / 100.0)
+                            samples.append(1.0)
                         else:
                             samples.append(0.0)
                     elif self.wave_shape == WAVE_TRIANGLE:
                         rising_ticks = round(ticks_per_note * self.width / 100.0)
                         falling_ticks = ticks_per_note - rising_ticks
                         
-                        peak_volts = MAX_OUTPUT_VOLTAGE * self.amplitude / 100.0
+                        peak = 1.0
                         
                         if tick < rising_ticks:
                             # we're on the rising side of the triangle wave
-                            step = peak_volts / rising_ticks
+                            step = peak / rising_ticks
                             volts = step * tick
                             samples.append(volts)
                         elif tick == rising_ticks:
                             # we're at the peak of the triangle
-                            samples.append(peak_volts)
+                            samples.append(peak)
                         else:
                             # we're on the falling side of the triangle
-                            step = peak_volts / falling_ticks
-                            volts = peak_volts - step * (tick - rising_ticks)
+                            step = peak / falling_ticks
+                            volts = peak - step * (tick - rising_ticks)
                             samples.append(volts)
                         
                     elif self.wave_shape == WAVE_SIN:
                         theta = tick / ticks_per_note * 2 * math.pi  # covert the tick to radians
                         s_theta = (math.sin(theta) + 1 / 2)           # (sin(x) + 1)/2 since we can't output negative voltages
                         
-                        samples.append(MAX_OUTPUT_VOLTAGE * self.amplitude / 100.0 * s_theta)
+                        samples.append(s_theta)
                     else:
                         # unknown wave or not implemented yet
                         # leave things off for safety
@@ -575,12 +581,8 @@ class PamsOutput:
     def tick(self):
         """Advance the current pattern one tick and set the output voltage
         """
-        
-        # will we need to skip this step?
-        # not necessarily needed all the time, but easiest to calculate once
-        do_skip = random.randint(0, 100) < self.skip
-        
         # advance the playback position to the next sample
+        previous_sample_position = self.playback_position
         self.playback_position = self.playback_position + 1
         if self.playback_position >= len(self.playback_pattern):
             self.playback_position = 0
@@ -589,17 +591,29 @@ class PamsOutput:
             if self.next_pattern:
                 self.playback_pattern = self.next_pattern
                 self.next_pattern = None
+                previous_sample_position = len(self.playback_pattern) - 1
         
         out_volts = self.playback_pattern[self.playback_position]
+        
+        # are we restarting the pattern OR hitting a new pulse inside the euclidean rhythm?
+        rising_edge = self.playback_position == 0 or (self.playback_pattern[previous_sample_position] == 0 and self.playback_pattern[self.playback_position] > 0)
+        
+        # if we're starting a new signal, determine if we should skip it
+        if rising_edge:
+            self.skip_this_step = random.randint(0, 100) < self.skip
         
         # generate a new random voltage on the rising edge of the playback pattern
         # otherwise just sustain the previous output
         if self.wave_shape == WAVE_RANDOM:
-            # if this is a rising edge & not skipped
-            if self.previous_voltage == 0 and out_volts == 1 and not do_skip:
+            if rising_edge and not self.skip_this_step:
                 out_volts = MAX_OUTPUT_VOLTAGE * random.random() * (self.amplitude / 100.0) + MAX_OUTPUT_VOLTAGE * (self.width / 100.0)
             else:
                 out_volts = self.previous_voltage
+        else:
+            if not self.skip_this_step:
+                out_volts = MAX_OUTPUT_VOLTAGE * self.playback_pattern[self.playback_position] * (self.amplitude / 100.0)
+            else:
+                out_volts = 0.0
             
         if self.quantizer is not None:
             out_volts = self.quantizer.quantize(out_volts)
