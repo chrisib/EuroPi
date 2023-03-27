@@ -198,15 +198,8 @@ class MasterClock:
     ## The absolute fastest the clock can go
     MAX_BPM = 300
     
-    ## How fast does the internal clock tick
-    #
-    #  We use a hardware clock at high frequencies to decrement a counter
-    #  and fire logical clock "ticks" when the counter reaches zero
-    HW_CLOCK_INTERVAL = 1
-    
     def __init__(self, bpm, channels):
         """Create the main clock to run at a given bpm
-
         @param bpm  The initial BPM to run the clock at
         @param channels  A list of PamsOutput objects corresponding to the
                          output channels
@@ -215,10 +208,8 @@ class MasterClock:
         self.bpm = bpm
         self.reset_on_start = True
         self.channels = channels
-        
-        self.timer_counter = 0
+        self.timer = Timer()
         self.recalculate_ticks()
-        self.timer = Timer(period=self.HW_CLOCK_INTERVAL, mode=Timer.PERIODIC, callback=self.on_tick)
         
     def to_dict(self):
         """Return a dict with the clock's parameters
@@ -230,7 +221,6 @@ class MasterClock:
     
     def load_settings(self, settings):
         """Apply settings loaded from the configuration file
-
         @param settings  A dict containing the same fields as to_dict(self)
         """
         self.bpm = settings["bpm"]
@@ -239,7 +229,6 @@ class MasterClock:
         
     def __getitem__(self, key):
         """Equivalent of __getattr__ for values that can be set by the SettingChooser
-
         @param key  The name of the attribute we're getting
         
         @raises KeyError if the key is invalid
@@ -253,7 +242,6 @@ class MasterClock:
         
     def __setitem__(self, key, value):
         """Equivalent of __setattr__ for values that can be set by the SettingChooser
-
         @param key  The name of the attribute we're setting
         @param value  The value we're assigning
         
@@ -268,30 +256,21 @@ class MasterClock:
         
     def on_tick(self, timer):
         """Callback function for the timer's tick
-
-        We run the timer at a high frequency to count down the number of ms until we hit
-        a logical tick.  This is to avoid the latency involved in initializing & deinitializing
-        the hardware timer
         """
-        
-        if self.is_running:
-            self.timer_counter = self.timer_counter - self.HW_CLOCK_INTERVAL
-            if self.timer_counter <= 0:
-                self.timer_counter = self.ms_per_tick
-                for ch in self.channels:
-                    ch.tick()
+        for ch in self.channels:
+            ch.tick()
         
     def start(self):
         """Start the timer
         """
         if not self.is_running:
+            self.is_running = True
+            
             if self.reset_on_start:
                 for ch in self.channels:
                     ch.reset()
             
-            # set the timer counter to zero so we _always fire on the first tick
-            self.timer_counter = 0
-            self.is_running = True
+            self.timer.init(period=round(self.ms_per_tick), mode=Timer.PERIODIC, callback=self.on_tick)
         
     def stop(self):
         """Stop the timer
@@ -302,29 +281,28 @@ class MasterClock:
             
             # Fire a reset trigger on any channels that have the WAVE_RESET mode set
             # This trigger lasts 10ms
-            # Set all other channels to zero so we don't leave hot wires while the module
-            # is off
+            # Turn all other channels off so we don't leave hot wires
             for ch in self.channels:
                 if ch.wave_shape == WAVE_RESET:
                     ch.cv_out.voltage(MAX_OUTPUT_VOLTAGE * ch.amplitude / 100.0)
                 else:
                     ch.cv_out.voltage(0.0)
-            time.sleep(10)
+            time.sleep(0.01)   # time.sleep works in SECONDS not ms
             for ch in self.channels:
                 if ch.wave_shape == WAVE_RESET:
                     ch.cv_out.voltage(0)
         
     def recalculate_ticks(self):
         """Recalculate the number of ms per tick
-
         If the timer is currently running deinitialize it and reset it to use the correct BPM
         """
         min_per_beat = 1.0 / self.bpm
         self.ms_per_beat = min_per_beat * 60.0 * 1000.0
         self.ms_per_tick = self.ms_per_beat / self.PPQN
         
-        if self.timer_counter > self.ms_per_tick:
-            self.timer_counter = self.ms_per_tick
+        if self.is_running:
+            self.timer.deinit()
+            self.timer.init(period=round(self.ms_per_tick), mode=Timer.PERIODIC, callback=self.on_tick)
         
     def change_bpm(self, new_bpm):
         self.bpm = new_bpm
