@@ -584,7 +584,9 @@ class PamsOutput:
             else:
                 out_volts = self.previous_voltage
             
-        
+        if self.quantizer is not None:
+            out_volts = self.quantizer.quantize(out_volts)
+            
         self.cv_out.voltage(out_volts)
         
         # save the new voltage for the next tick's previous
