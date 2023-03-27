@@ -172,24 +172,6 @@ WAVE_SHAPE_IMGS = [
 ## Duration before we blank the screen
 SCREENSAVER_TIMEOUT_MS = 1000 * 60 * 20
 
-class Semaphore:
-    """A simple implementation of a semaphore for thread safety
-    """
-    def __init__(self, value):
-        self.value = value
-        
-    def acquire(self):
-        while self.value <= 0:
-            time.sleep(1)
-        
-        self.value = self.value - 1
-    
-    def release(self):
-        self.value = self.value + 1
-        
-    def can_acquire(self):
-        return self.value > 0
-
 class MasterClock:
     """The main clock that ticks and runs the outputs
     """
@@ -688,6 +670,9 @@ class SettingChooser:
         
         self.is_writable = can_edit
         
+    def is_editable(self):
+        return self.is_writable
+        
     def draw(self):
         """Draw the menu to the screen
         """
@@ -902,3 +887,4 @@ class PamsWorkout(EuroPiScript):
     
 if __name__=="__main__":
     PamsWorkout().main()
+
