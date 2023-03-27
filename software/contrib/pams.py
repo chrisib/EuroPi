@@ -169,6 +169,9 @@ WAVE_SHAPE_IMGS = [
     b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00'
 ]
 
+## Duration before we blank the screen
+SCREENSAVER_TIMEOUT_MS = 1000 * 60 * 20
+
 class MasterClock:
     """The main clock that ticks and runs the outputs
     """
@@ -767,6 +770,13 @@ class PamsMenu:
         else:
             self.editing_now.draw()
 
+class Screensaver:
+    """Blanks the screen
+    """
+    def draw(self):
+        oled.fill(0)
+        oled.show()
+
 class PamsWorkout(EuroPiScript):
     """The main script for the Pam's Workout implementation
     """
@@ -786,16 +796,29 @@ class PamsWorkout(EuroPiScript):
         ## The master top-level menu
         self.main_menu = PamsMenu(self)
         
+        ## The screensaver
+        self.screensaver = Screensaver()
+        
+        ## How long ago was _either_ button pressed?
+        #
+        #  This is used to wake the screensaver up and suppress the normal
+        #  button operations while doing so
+        self.last_interaction_time = time.ticks_ms()
+        
         @b1.handler
         def on_b1_press():
             """Handler for pressing button 1
 
             Button 1 starts/stops the master clock
             """
-            if self.clock.is_running:
-                self.clock.stop()
-            else:
-                self.clock.start()
+            now = time.ticks_ms()
+            if time.ticks_diff(now, self.last_interaction_time) <= SCREENSAVER_TIMEOUT_MS:
+                if self.clock.is_running:
+                    self.clock.stop()
+                else:
+                    self.clock.start()
+                    
+            self.last_interaction_time = now
             
         @b2.handler_falling
         def on_b2_release():
@@ -806,14 +829,17 @@ class PamsWorkout(EuroPiScript):
             Button 2 is used to cycle between screens
             """
             now = time.ticks_ms()
-            if time.ticks_diff(now, b2.last_pressed()) > LONG_PRESS_MS:
-                # long press
-                # change between the main & sub menus
-                self.main_menu.on_long_press()
-            else:
-                # short press
-                self.main_menu.on_click()
-                self.save()
+            if time.ticks_diff(now, self.last_interaction_time) <= SCREENSAVER_TIMEOUT_MS:
+                if time.ticks_diff(now, b2.last_pressed()) > LONG_PRESS_MS:
+                    # long press
+                    # change between the main & sub menus
+                    self.main_menu.on_long_press()
+                else:
+                    # short press
+                    self.main_menu.on_click()
+                    self.save()
+            
+            self.last_interaction_time = now
             
         
     def load(self):
@@ -849,7 +875,11 @@ class PamsWorkout(EuroPiScript):
         self.load()
         
         while True:
-            self.main_menu.draw()
+            now = time.ticks_ms()
+            if time.ticks_diff(now, self.last_interaction_time) > SCREENSAVER_TIMEOUT_MS:
+                self.screensaver.draw()
+            else:
+                self.main_menu.draw()
     
 if __name__=="__main__":
     PamsWorkout().main()
