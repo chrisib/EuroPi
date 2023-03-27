@@ -172,6 +172,24 @@ WAVE_SHAPE_IMGS = [
 ## Duration before we blank the screen
 SCREENSAVER_TIMEOUT_MS = 1000 * 60 * 20
 
+class Semaphore:
+    """A simple implementation of a semaphore for thread safety
+    """
+    def __init__(self, value):
+        self.value = value
+        
+    def acquire(self):
+        while self.value <= 0:
+            time.sleep(1)
+        
+        self.value = self.value - 1
+    
+    def release(self):
+        self.value = self.value + 1
+        
+    def can_acquire(self):
+        return self.value > 0
+
 class MasterClock:
     """The main clock that ticks and runs the outputs
     """
@@ -365,6 +383,13 @@ class PamsOutput:
         ## The pre-calculated waveform we step through during playback
         self.playback_pattern = [0]
         
+        ## If we change patterns while playing store the next one here and
+        #  change when the current pattern ends
+        #
+        #  This helps ensure all outputs stay synchronized. The down-side is
+        #  that a slow pattern may take a long time to reset
+        self.next_pattern = None
+        
         ## The previous voltage we output
         self.prevous_voltage = 0
         
@@ -555,13 +580,15 @@ class PamsOutput:
                         # leave things off for safety
                         samples.append(0.0)
         
-        self.playback_position = self.playback_position % len(samples)
-        self.playback_pattern = samples
+        self.next_pattern = samples
     
     def reset(self):
         """Reset the current output to the beginning
         """
         self.playback_position = 0
+        if self.next_pattern:
+            self.playback_pattern = self.next_pattern
+            self.next_pattern = None
     
     def tick(self):
         """Advance the current pattern one tick and set the output voltage
@@ -575,6 +602,11 @@ class PamsOutput:
         self.playback_position = self.playback_position + 1
         if self.playback_position >= len(self.playback_pattern):
             self.playback_position = 0
+            
+            # if we've queued a pattern change, apply it now, once the current one ends
+            if self.next_pattern:
+                self.playback_pattern = self.next_pattern
+                self.next_pattern = None
         
         out_volts = self.playback_pattern[self.playback_position]
         
@@ -735,40 +767,27 @@ class PamsMenu:
             
         self.active_items = self.items
         
-        self.editing_now = None
+        ## The item we're actually drawing to the screen _right_now_
+        self.visible_item = k1.choice(self.active_items)
         
     def on_long_press(self):
         # return the active item to the read-only state
-        if self.editing_now is None:
-            item = k1.choice(self.active_items)
-            item.set_editable(False)
-        else:
-            self.editing_now.set_editable(False)
-            self.editing_now = None
+        self.visible_item.set_editable(False)
         
         # toggle between the two menu levels
         if self.active_items == self.items:
-            self.active_items = k1.choice(self.items).submenu
+            self.active_items = self.visible_item.submenu
         else:
             self.active_items = self.items
             
     def on_click(self):
-        if self.editing_now is None:
-            item = k1.choice(self.active_items)
-            item.on_click()
-            if item.is_writable:
-                self.editing_now = item
-        else:
-            self.editing_now.on_click()
-            if not self.editing_now.is_writable:
-                self.editing_now = None
+        self.visible_item.on_click()
             
     def draw(self):
-        if self.editing_now is None:
-            active_item = k1.choice(self.active_items)
-            active_item.draw()
-        else:
-            self.editing_now.draw()
+        if not self.visible_item.is_editable():
+            self.visible_item = k1.choice(self.active_items)
+            
+        self.visible_item.draw()
 
 class Screensaver:
     """Blanks the screen
