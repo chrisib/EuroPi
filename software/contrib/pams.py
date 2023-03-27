@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """A EuroPi clone of ALM's Pamela's NEW Workout
 
+@author Chris Iverach-Brereton <ve4cib@gmail.com>
+@year   2023
+
 The module has a master clock rate, with each channel outputting
 a multiple/division of that rate.
 
@@ -35,6 +38,7 @@ from europi_script import EuroPiScript
 
 from contrib.euclid import generate_euclidean_pattern
 from contrib.quantizer import Quantizer
+from contrib.screensaver import Screensaver
 
 from machine import Timer
 
@@ -169,8 +173,11 @@ WAVE_SHAPE_IMGS = [
     b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00'
 ]
 
+## Duration before we activate the screensaver
+SCREENSAVER_TIMEOUT_MS = 1000 * 60 * 5
+
 ## Duration before we blank the screen
-SCREENSAVER_TIMEOUT_MS = 1000 * 60 * 20
+BLANK_TIMEOUT_MS = 1000 * 60 * 20
 
 class MasterClock:
     """The main clock that ticks and runs the outputs
@@ -191,6 +198,12 @@ class MasterClock:
     ## The absolute fastest the clock can go
     MAX_BPM = 300
     
+    ## How fast does the internal clock tick
+    #
+    #  We use a hardware clock at high frequencies to decrement a counter
+    #  and fire logical clock "ticks" when the counter reaches zero
+    HW_CLOCK_INTERVAL = 1
+    
     def __init__(self, bpm, channels):
         """Create the main clock to run at a given bpm
 
@@ -202,8 +215,10 @@ class MasterClock:
         self.bpm = bpm
         self.reset_on_start = True
         self.channels = channels
-        self.timer = Timer()
+        
+        self.timer_counter = 0
         self.recalculate_ticks()
+        self.timer = Timer(period=self.HW_CLOCK_INTERVAL, mode=Timer.PERIODIC, callback=self.on_tick)
         
     def to_dict(self):
         """Return a dict with the clock's parameters
@@ -253,21 +268,30 @@ class MasterClock:
         
     def on_tick(self, timer):
         """Callback function for the timer's tick
+
+        We run the timer at a high frequency to count down the number of ms until we hit
+        a logical tick.  This is to avoid the latency involved in initializing & deinitializing
+        the hardware timer
         """
-        for ch in self.channels:
-            ch.tick()
+        
+        if self.is_running:
+            self.timer_counter = self.timer_counter - self.HW_CLOCK_INTERVAL
+            if self.timer_counter <= 0:
+                self.timer_counter = self.ms_per_tick
+                for ch in self.channels:
+                    ch.tick()
         
     def start(self):
         """Start the timer
         """
         if not self.is_running:
-            self.is_running = True
-            
             if self.reset_on_start:
                 for ch in self.channels:
                     ch.reset()
             
-            self.timer.init(period=round(self.ms_per_tick), mode=Timer.PERIODIC, callback=self.on_tick)
+            # set the timer counter to zero so we _always fire on the first tick
+            self.timer_counter = 0
+            self.is_running = True
         
     def stop(self):
         """Stop the timer
@@ -278,9 +302,13 @@ class MasterClock:
             
             # Fire a reset trigger on any channels that have the WAVE_RESET mode set
             # This trigger lasts 10ms
+            # Set all other channels to zero so we don't leave hot wires while the module
+            # is off
             for ch in self.channels:
                 if ch.wave_shape == WAVE_RESET:
                     ch.cv_out.voltage(MAX_OUTPUT_VOLTAGE * ch.amplitude / 100.0)
+                else:
+                    ch.cv_out.voltage(0.0)
             time.sleep(10)
             for ch in self.channels:
                 if ch.wave_shape == WAVE_RESET:
@@ -295,9 +323,8 @@ class MasterClock:
         self.ms_per_beat = min_per_beat * 60.0 * 1000.0
         self.ms_per_tick = self.ms_per_beat / self.PPQN
         
-        if self.is_running:
-            self.timer.deinit()
-            self.timer.init(period=round(self.ms_per_tick), mode=Timer.PERIODIC, callback=self.on_tick)
+        if self.timer_counter > self.ms_per_tick:
+            self.timer_counter = self.ms_per_tick
         
     def change_bpm(self, new_bpm):
         self.bpm = new_bpm
@@ -788,13 +815,6 @@ class PamsMenu:
             
         self.visible_item.draw()
 
-class Screensaver:
-    """Blanks the screen
-    """
-    def draw(self):
-        oled.fill(0)
-        oled.show()
-
 class PamsWorkout(EuroPiScript):
     """The main script for the Pam's Workout implementation
     """
@@ -829,14 +849,21 @@ class PamsWorkout(EuroPiScript):
 
             Button 1 starts/stops the master clock
             """
+            if self.clock.is_running:
+                self.clock.stop()
+            else:
+                self.clock.start()
+                
+        @b1.handler_falling
+        def on_b1_release():
+            """Handler for releasing button 1
+
+            Wake up the display if it's asleep.  We do this on release to keep the
+            wake up behavior the same for both buttons
+            """
             now = time.ticks_ms()
-            if time.ticks_diff(now, self.last_interaction_time) <= SCREENSAVER_TIMEOUT_MS:
-                if self.clock.is_running:
-                    self.clock.stop()
-                else:
-                    self.clock.start()
-                    
             self.last_interaction_time = now
+            
             
         @b2.handler_falling
         def on_b2_release():
@@ -845,6 +872,9 @@ class PamsWorkout(EuroPiScript):
             Handle long vs short presses differently
 
             Button 2 is used to cycle between screens
+            
+            If the screensaver is visible, just wake up the display & don't process
+            the actual button click/long-press
             """
             now = time.ticks_ms()
             if time.ticks_diff(now, self.last_interaction_time) <= SCREENSAVER_TIMEOUT_MS:
@@ -894,7 +924,9 @@ class PamsWorkout(EuroPiScript):
         
         while True:
             now = time.ticks_ms()
-            if time.ticks_diff(now, self.last_interaction_time) > SCREENSAVER_TIMEOUT_MS:
+            if time.ticks_diff(now, self.last_interaction_time) > BLANK_TIMEOUT_MS:
+                self.screensaver.draw_blank()
+            elif time.ticks_diff(now, self.last_interaction_time) > SCREENSAVER_TIMEOUT_MS:
                 self.screensaver.draw()
             else:
                 self.main_menu.draw()
