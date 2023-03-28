@@ -61,7 +61,8 @@ The menu layout is as follows:
 |-- CV2 to 6
 |   |-- Same as CV1
 |-- AIN
-|   |-- Destination Channel
+|   |-- Gain
+|   |   |-- Destination Channel
 |   |   |-- Destination Property
 ```
 
@@ -125,3 +126,8 @@ The following properties can be CV controlled:
     - Euclidean pulses
     - Euclidean rotation
     - Quantizer
+
+Because many LFOs, EGs, and other modulation sources output 5V maximum, but the maximum input
+to EuroPi is 12V, the gain to `ain` can be increased by up to 300%.  This will artificially
+increase the signal being applied to the desired property without the need for an external
+amplifier.

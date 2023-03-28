@@ -230,8 +230,11 @@ class MasterClock:
         """Apply settings loaded from the configuration file
         @param settings  A dict containing the same fields as to_dict(self)
         """
-        self.bpm = settings["bpm"]
-        self.reset_on_start = settings["reset_on_start"]
+        if "bpm" in settings:
+            self.bpm = settings["bpm"]
+        if "reset_on_start" in settings:
+            self.reset_on_start = settings["reset_on_start"]
+            
         self.recalculate_ticks()
         
     def __getitem__(self, key):
@@ -413,23 +416,30 @@ class PamsOutput:
 
         @param settings  A dict with the same keys as the one returned by to_dict()
         """
-        
-        self.clock_mod_txt = settings["clock_mod"]
-        self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
-        self.e_step = settings["e_step"]
-        self.e_trig = settings["e_trig"]
-        self.e_rot = settings["e_rot"]
-        self.skip = settings["skip"]
-        self.wave_shape_txt = settings["wave"]
-        self.wave_shape = WAVE_SHAPES[self.wave_shape_txt]
-        self.amplitude = settings["amplitude"]
-        self.width = settings["width"]
-        self.quantizer_txt = settings["quant"]
-        
-        if self.quantizer_txt in QUANTIZERS.keys():
-            self.quantizer = QUANTIZERS[self.quantizer_txt]
-        else:
-            self.quantizer = None
+        if "clock_mod" in settings:
+            self.clock_mod_txt = settings["clock_mod"]
+            self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
+        if "e_step" in settings:
+            self.e_step = settings["e_step"]
+        if "e_trig" in settings:
+            self.e_trig = settings["e_trig"]
+        if "e_rot" in settings:
+            self.e_rot = settings["e_rot"]
+        if "skip" in settings:
+            self.skip = settings["skip"]
+        if "wave" in settings:
+            self.wave_shape_txt = settings["wave"]
+            self.wave_shape = WAVE_SHAPES[self.wave_shape_txt]
+        if "amplitude" in settings:
+            self.amplitude = settings["amplitude"]
+        if "width" in settings:
+            self.width = settings["width"]
+        if "quant" in settings:
+            self.quantizer_txt = settings["quant"]
+            if self.quantizer_txt in QUANTIZERS.keys():
+                self.quantizer = QUANTIZERS[self.quantizer_txt]
+            else:
+                self.quantizer = None
         
         self.recalculate_pattern()
         
@@ -656,6 +666,7 @@ class CVController:
         self.dest_obj = None
         self.dest_obj_txt = "None"
         self.dest_key = "None"
+        self.gain = 100
         
         self.dest_objects = {
             "None"  : None,
@@ -751,7 +762,8 @@ class CVController:
         """
         return {
             "dest_obj"  : self.dest_obj_txt,
-            "dest_key"  : self.dest_key
+            "dest_key"  : self.dest_key,
+            "gain"      : self.gain
         }
     
     def load_settings(self, settings):
@@ -760,15 +772,23 @@ class CVController:
         @param settings  A dict with the same keys as the one returned by to_dict()
         """
         
-        self.dest_obj_txt = settings["dest_obj"]
-        self.dest_obj = self.dest_objects[self.dest_obj_txt]
-        self.dest_key = settings["dest_key"]
+        if "dest_obj" in settings:
+            self.dest_obj_txt = settings["dest_obj"]
+            self.dest_obj = self.dest_objects[self.dest_obj_txt]
+            
+        if "dest_key" in settings:
+            self.dest_key = settings["dest_key"]
+            
+        if "gain" in settings:
+            self.gain = settings["gain"]
         
     def __getitem__(self, key):
         if key == "dest_obj_txt":
             return self.dest_obj_txt
         elif key == "dest_key":
             return self.dest_key
+        elif key == "gain":
+            return self.gain
         else:
             raise KeyError(f"Key \"{key}\" is not valid")
     
@@ -782,6 +802,8 @@ class CVController:
                 self.dest_key = self.dest_keys[self.dest_obj_txt][0]
         elif key == "dest_key":
             self.dest_key = value
+        elif key == "gain":
+            self.gain = value
         else:
             raise KeyError(f"Key \"{key}\" is not valid")
     
@@ -792,7 +814,11 @@ class CVController:
             if self.dest_obj:
                 options = self.__get_applicable_options()
                 low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
-                self.dest_obj[low_level_key] = self.cv_in.choice(options)
+                
+                volts = self.cv_in.read_voltage()
+                volts = volts * self.gain / 100.0
+                index = min(len(options)-1, round(volts / MAX_INPUT_VOLTAGE * len(options)))
+                self.dest_obj[low_level_key] = options[index]
         except:
             # If we're unlucky and modify the destination _during_ a thread interruption
             # we can get thread-unsafe and have a bad key
@@ -940,8 +966,9 @@ class PamsMenu:
                 SettingChooser(f"CV{i+1} | Quant.", QUANTIZER_LABELS, script.channels[i], "quantizer_txt")
             ]))
             
-        self.items.append(SettingChooser(f"AIN", CVController.DESTINATIONS, script.cv_in, "dest_obj_txt", [
-            SettingChooser("Destination", [], script.cv_in, "dest_key", validate_settings = script.cv_in.get_dest_options)
+        self.items.append(SettingChooser(f"AIN | Gain%", list(range(301)), script.cv_in, "gain", [
+            SettingChooser("Dest.", CVController.DESTINATIONS, script.cv_in, "dest_obj_txt"),
+            SettingChooser("Prop", [], script.cv_in, "dest_key", validate_settings = script.cv_in.get_dest_options)
         ]))
             
         self.active_items = self.items
