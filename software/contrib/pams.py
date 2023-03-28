@@ -967,8 +967,8 @@ class PamsMenu:
             ]))
             
         self.items.append(SettingChooser(f"AIN | Gain%", list(range(301)), script.cv_in, "gain", [
-            SettingChooser("Dest.", CVController.DESTINATIONS, script.cv_in, "dest_obj_txt"),
-            SettingChooser("Prop", [], script.cv_in, "dest_key", validate_settings = script.cv_in.get_dest_options)
+            SettingChooser("AIN | Dest.", CVController.DESTINATIONS, script.cv_in, "dest_obj_txt"),
+            SettingChooser("AIN | Prop", [], script.cv_in, "dest_key", validate_settings = script.cv_in.get_dest_options)
         ]))
             
         self.active_items = self.items
