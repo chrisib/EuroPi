@@ -27,18 +27,12 @@ clock multiplier or divider, chosen from the following:
 
 ## External CV Routing
 
-NOTE: THIS FEATURE IS NOT IMPLEMENTED YET!!
+The input signal to `ain` can be configured to control many parameters of the system.
+A value of 0V is the equivalent of choosing the first item from the available menu
+and 10V is the equivalent of choosing the last item in the menu.
 
-Many of the master clock or per-channel configuration options have a `CV` option.  If
-this is selected, then the voltage used to control the given parameter.  A value of
-0V will be the equivalent of choosing the lowest option available, and a value of 10V
-will be the equivalent of choosing the highest option available.
-
-Note that multiple settings can be controlled simultaneously from `ain`, which can
-result in some interesting effects.
-
-There is no attenuation available, so you will have to use an external attenuator, VCA,
-or other control to attenuate the input signal.
+There is no attenuation of the input signal available, so you will have to use an
+external attenuator or VCA to control the signal coming into `ain`.
 
 ## Menu Navigation
 
@@ -64,8 +58,11 @@ The menu layout is as follows:
 |   |   |-- Euclidean Triggers
 |   |   |-- Euclidean Rotatioj
 |   |   |-- Quantization Scale
-|-- CV2-6
+|-- CV2 to 6
 |   |-- Same as CV1
+|-- AIN
+|   |-- Destination Channel
+|   |   |-- Destination Property
 ```
 
 ## Main Clock Options
@@ -109,3 +106,22 @@ Effects of width control on different wave shapes:
 - Sine: ignored
 - Random: offset voltage as a percentage of the maximum output
 - Reset: ignored
+
+## AIN Routing Menu
+
+The signal to `ain` can be routed to the master clock or any of the CV channels.
+
+The following properties can be CV controlled:
+
+- Master Clock:
+    - BPM
+- CV 1-6:
+    - Clock modifier
+    - Wave shape
+    - Amplitude
+    - Width
+    - Skip
+    - Euclidean steps
+    - Euclidean pulses
+    - Euclidean rotation
+    - Quantizer

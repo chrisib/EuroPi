@@ -59,11 +59,15 @@ QUANTIZERS = {
     
     "Nat Maj"   : Quantizer([True,  False, True,  False, True,  True,  False, True,  False, True,  False, True]),
     "Har Maj"   : Quantizer([True,  False, True,  False, True,  True,  False, True,  True,  False, True,  False]),
+    "Maj 135"   : Quantizer([True,  False, False, False, True,  False, False, True,  False, False, False, False]),
     
     "Nat Min"   : Quantizer([True,  False, True,  True,  False, True,  False, True,  True,  False, True,  False]),
     "Har Min"   : Quantizer([True,  False, True,  True,  False, True,  False, True,  True,  False, False, True]),
+    "Min 135"   : Quantizer([True,  False, False, True,  False, False, False, True,  False, False, False, False]),
     
-    "Whole"     : Quantizer([True,  False, True,  False, True,  False, True,  False, True,  False, True,  False])
+    "Whole"     : Quantizer([True,  False, True,  False, True,  False, True,  False, True,  False, True,  False]),
+    
+    "135b7"     : Quantizer([True,  False, False,  False, True, False, False, True,  False, False, True,  False])
     
     # TODO: any additional scales?
     # maybe 1-3-5 or 1-3-5-b7 ?
@@ -76,9 +80,12 @@ QUANTIZER_LABELS = [
     "Chromatic",
     "Nat Maj",
     "Har Maj",
+    "Maj 135",
     "Nat Min",
     "Har Min",
-    "Whole"
+    "Min 135",
+    "Whole",
+    "135b7"
 ]
 
 ## Available clock modifiers
@@ -621,12 +628,176 @@ class PamsOutput:
                 out_volts = 0.0
             
         if self.quantizer is not None:
-            out_volts = self.quantizer.quantize(out_volts)
+            (out_volts, note) = self.quantizer.quantize(out_volts)
             
         self.cv_out.voltage(out_volts)
         
         # save the new voltage for the next tick's previous
         self.previous_voltage = out_volts
+
+class CVController:
+    """Allows the signal from AIN to be routed to another object to control its properties
+    """
+    
+    DESTINATIONS = [
+        "None",
+        "Clock",
+        "CV1",
+        "CV2",
+        "CV3",
+        "CV4",
+        "CV5",
+        "CV6"
+    ]
+    
+    def __init__(self, cv_in, application):
+        self.app = application
+        self.cv_in = cv_in
+        self.dest_obj = None
+        self.dest_obj_txt = "None"
+        self.dest_key = "None"
+        
+        self.dest_objects = {
+            "None"  : None,
+            "Clock" : self.app.clock,
+            "CV1"   : self.app.channels[0],
+            "CV2"   : self.app.channels[1],
+            "CV3"   : self.app.channels[2],
+            "CV4"   : self.app.channels[3],
+            "CV5"   : self.app.channels[4],
+            "CV6"   : self.app.channels[5]
+        }
+        
+        cv_channel_dests = [
+            "Clock Mod",
+            "Wave",
+            "Width",
+            "Ampl.",
+            "Skip%",
+            "ESteps",
+            "ETrigs",
+            "ERot",
+            "Quant."
+        ]
+        
+        self.dest_keys = {
+            "None"  : ["None"],
+            "Clock" : ["BPM"],
+            "CV1"   : cv_channel_dests,
+            "CV2"   : cv_channel_dests,
+            "CV3"   : cv_channel_dests,
+            "CV4"   : cv_channel_dests,
+            "CV5"   : cv_channel_dests,
+            "CV6"   : cv_channel_dests
+        }
+        
+        self.none_keys = {
+            "None": "none"
+        }
+        
+        self.clock_keys = {
+            "BPM": "bpm"
+        }
+        
+        self.cv_keys = {
+            "Clock Mod" : "clock_mod_txt",
+            "Wave"      : "wave_shape_txt",
+            "Width"     : "width",
+            "Ampl."     : "amplitude",
+            "Skip%"     : "skip",
+            "ESteps"    : "e_step",
+            "ETrigs"    : "e_trig",
+            "ERot"      : "e_rot",
+            "Quant."    : "quantizer_txt"
+        }
+        
+        self.low_level_keys = {
+            "None"  : self.none_keys,
+            "Clock" : self.clock_keys,
+            "CV1"   : self.cv_keys,
+            "CV2"   : self.cv_keys,
+            "CV3"   : self.cv_keys,
+            "CV4"   : self.cv_keys,
+            "CV5"   : self.cv_keys,
+            "CV6"   : self.cv_keys
+        }
+        
+    def __clamp_euclid_range(self):
+        return list(range(self.dest_obj.e_step+1))
+    
+    def __get_applicable_options(self):
+        if self.dest_key == "ETrigs" or self.dest_key == "ERot":
+            return self.__clamp_euclid_range()
+        elif self.dest_key == "ESteps":
+            return list(range(PamsOutput.MAX_EUCLID_LENGTH+1))
+        elif self.dest_key == "BPM":
+            return list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1))
+        elif self.dest_key == "Clock Mod":
+            return CLOCK_MOD_LABELS
+        elif self.dest_key == "Wave":
+            return WAVE_SHAPE_LABELS
+        elif self.dest_key == "Width" or self.dest_key == "Ampl." or self.dest_key == "Skip%":
+            return list(range(101))
+        elif self.dest_key == "Quant.":
+            return QUANTIZER_LABELS
+        else:
+            return [0]
+        
+    def get_dest_options(self):
+        return self.dest_keys[self.dest_obj_txt]
+        
+    def to_dict(self):
+        """Return a dictionary with all the configurable settings to write to disk
+        """
+        return {
+            "dest_obj"  : self.dest_obj_txt,
+            "dest_key"  : self.dest_key
+        }
+    
+    def load_settings(self, settings):
+        """Apply the settings loaded from storage
+
+        @param settings  A dict with the same keys as the one returned by to_dict()
+        """
+        
+        self.dest_obj_txt = settings["dest_obj"]
+        self.dest_obj = self.dest_objects[self.dest_obj_txt]
+        self.dest_key = settings["dest_key"]
+        
+    def __getitem__(self, key):
+        if key == "dest_obj_txt":
+            return self.dest_obj_txt
+        elif key == "dest_key":
+            return self.dest_key
+        else:
+            raise KeyError(f"Key \"{key}\" is not valid")
+    
+    def __setitem__(self, key, value):
+        if key == "dest_obj_txt":
+            self.dest_obj_txt = value
+            self.dest_obj = self.dest_objects[value]
+            
+            # Make sure the dest key is in the valid options for the dest object
+            if not (self.dest_key in self.dest_keys[self.dest_obj_txt]):
+                self.dest_key = self.dest_keys[self.dest_obj_txt][0]
+        elif key == "dest_key":
+            self.dest_key = value
+        else:
+            raise KeyError(f"Key \"{key}\" is not valid")
+    
+    def read_and_apply(self):
+        """Read the analogue input and apply it to the destination object
+        """
+        try:
+            if self.dest_obj:
+                options = self.__get_applicable_options()
+                low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
+                self.dest_obj[low_level_key] = self.cv_in.choice(options)
+        except:
+            # If we're unlucky and modify the destination _during_ a thread interruption
+            # we can get thread-unsafe and have a bad key
+            # Just suppress the error and carry on
+            pass
 
 class SettingChooser:
     """Menu UI element for displaying an option and the choices associated with it
@@ -769,6 +940,10 @@ class PamsMenu:
                 SettingChooser(f"CV{i+1} | Quant.", QUANTIZER_LABELS, script.channels[i], "quantizer_txt")
             ]))
             
+        self.items.append(SettingChooser(f"AIN", CVController.DESTINATIONS, script.cv_in, "dest_obj_txt", [
+            SettingChooser("Destination", [], script.cv_in, "dest_key", validate_settings = script.cv_in.get_dest_options)
+        ]))
+            
         self.active_items = self.items
         
         ## The item we're actually drawing to the screen _right_now_
@@ -808,6 +983,7 @@ class PamsWorkout(EuroPiScript):
             PamsOutput(cv6),
         ]
         self.clock = MasterClock(120, self.channels)
+        self.cv_in = CVController(ain, self)
         
         ## The master top-level menu
         self.main_menu = PamsMenu(self)
@@ -880,13 +1056,18 @@ class PamsWorkout(EuroPiScript):
         clock_cfg = state.get("clock", None)
         if clock_cfg:
             self.clock.load_settings(clock_cfg)
+            
+        cv_cfg = state.get("ain", None)
+        if cv_cfg:
+            self.cv_in.load_settings(cv_cfg)
         
     def save(self):
         """Save current settings to the persistent storage
         """
         state = {
             "clock": self.clock.to_dict(),
-            "channels": []
+            "channels": [],
+            "ain": self.cv_in.to_dict()
         }
         for i in range(len(self.channels)):
             state["channels"].append(self.channels[i].to_dict())
@@ -902,6 +1083,9 @@ class PamsWorkout(EuroPiScript):
         
         while True:
             now = time.ticks_ms()
+            
+            self.cv_in.read_and_apply()
+            
             if time.ticks_diff(now, self.last_interaction_time) > BLANK_TIMEOUT_MS:
                 self.screensaver.draw_blank()
             elif time.ticks_diff(now, self.last_interaction_time) > SCREENSAVER_TIMEOUT_MS:
