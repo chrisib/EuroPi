@@ -37,6 +37,7 @@ class PWM:
     def duty_u16(self, f):
         pass
 
+
 class Timer:
     ONE_SHOT = 0
     PERIODIC = 1
@@ -49,6 +50,7 @@ class Timer:
 
     def deinit(self):
         pass
+
 
 def freq(_):
     pass
