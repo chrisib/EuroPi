@@ -668,6 +668,10 @@ class CVController:
         self.dest_key = "None"
         self.gain = 100
         
+        self.prev_dest_obj_txt = "None"
+        self.prev_dest_key = "None"
+        self.prev_dest_value = None
+        
         self.dest_objects = {
             "None"  : None,
             "Clock" : self.app.clock,
@@ -763,7 +767,10 @@ class CVController:
         return {
             "dest_obj"  : self.dest_obj_txt,
             "dest_key"  : self.dest_key,
-            "gain"      : self.gain
+            "gain"      : self.gain,
+            "prev_obj"  : self.prev_dest_obj_txt,
+            "prev_key"  : self.prev_dest_key,
+            "prev_value": self.prev_dest_value
         }
     
     def load_settings(self, settings):
@@ -781,6 +788,23 @@ class CVController:
             
         if "gain" in settings:
             self.gain = settings["gain"]
+            
+        if "prev_obj" in settings:
+            self.prev_dest_obj_txt = settings["prev_obj"]
+            
+        if "prev_key" in settings:
+            self.prev_dest_key = settings["prev_key"]
+            
+        if "prev_value" in settings:
+            self.prev_dest_value = settings["prev_value"]
+        
+    def restore_previous(self):
+        """Restore the pre-CV-controlled state of whatever object we're controlling
+        """
+        dest_obj = self.dest_objects[self.prev_dest_obj_txt]
+        if dest_obj:
+            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
+            dest_obj[low_level_key] = self.prev_dest_value
         
     def __getitem__(self, key):
         if key == "dest_obj_txt":
@@ -794,13 +818,23 @@ class CVController:
     
     def __setitem__(self, key, value):
         if key == "dest_obj_txt":
+            self.restore_previous()
+            
             self.dest_obj_txt = value
             self.dest_obj = self.dest_objects[value]
             
             # Make sure the dest key is in the valid options for the dest object
             if not (self.dest_key in self.dest_keys[self.dest_obj_txt]):
                 self.dest_key = self.dest_keys[self.dest_obj_txt][0]
+                
+            # save the current state of the destination object
+            self.prev_dest_obj_txt = value
+            self.prev_dest_key = self.dest_key
+            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
+            self.prev_dest_value = self.dest_objects[self.prev_dest_obj_txt][low_level_key]
         elif key == "dest_key":
+            self.restore_previous()
+            
             self.dest_key = value
         elif key == "gain":
             self.gain = value
@@ -875,7 +909,6 @@ class SettingChooser:
         
         @param options  The new set of options we allow
         """
-        
         self.options = options
         
     def set_editable(self, can_edit):
