@@ -47,7 +47,7 @@ class Timer:
     def init(self, mode=1, freq=1000, callback=None):
         pass
     
-    def deinit(sef):
+    def deinit(self):
         pass
 
 def freq(_):
