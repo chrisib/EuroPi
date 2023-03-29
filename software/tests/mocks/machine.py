@@ -41,10 +41,10 @@ class Timer:
     ONE_SHOT = 0
     PERIODIC = 1
     
-    def __init__(mode=Timer.PERIODIC, freq=1000, callback=mycallback):
+    def __init__(self, mode=1, freq=1000, callback=None):
         pass
     
-    def init(mode=Timer.PERIODIC, freq=1000, callback=mycallback):
+    def init(self, mode=1, freq=1000, callback=None):
         pass
     
     def deinit():
