@@ -1,12 +1,12 @@
 # Pam's "EuroPi" Workout
 
 This program is an homage to ALM's Pamela's "NEW" Workout and Pamela's "PRO"
-Workout modules, designed for the EuroPi.  It is intended to be used as a
+Workout modules, designed for the EuroPi. It is intended to be used as a
 main clock generator, euclidean rhythm generator, clocked LFO, clocked
 random voltage source, etc... with optional quantization.
 
 The module itself will generate the master clock signal with a configurable
-BPM (1-300 BPM supported).  Each output has an independently controlled
+BPM (1-300 BPM supported). Each output has an independently controlled
 clock multiplier or divider, chosen from the following:
 
 ```
@@ -36,11 +36,11 @@ external attenuator or VCA to control the signal coming into `ain`.
 
 ## Menu Navigation
 
-Rotate `k1` to scroll through the current menu.  Pressing and holding `b2` for 0.5s will
-enter a sub-menu.  Pressing and holding `b2` again will return to the parent menu.
+Rotate `k1` to scroll through the current menu. Pressing and holding `b2` for 0.5s will
+enter a sub-menu. Pressing and holding `b2` again will return to the parent menu.
 
 On any given menu item, pressing `b2` (without holding) will enter edit mode for that
-item.  Rotate `k2` to choose the desired value for the item, and press `b2` again
+item. Rotate `k2` to choose the desired value for the item, and press `b2` again
 to apply it.
 
 The menu layout is as follows:
@@ -70,7 +70,7 @@ The menu layout is as follows:
 
 The main clock menu has the following options:
 
-- `BPM` -- the main BPM for the clock. Must be in the range `[TODO_LOW, TODO_HIGH]`.
+- `BPM` -- the main BPM for the clock. Must be in the range `[1, 300]`.
 
 The submenu for the main clock has the following options:
 
@@ -81,7 +81,7 @@ The submenu for the main clock has the following options:
 
 Each of the 6 CV output channels has the following options:
 
-- `Mod` -- the clock modifier.  See above for valid ranges.
+- `Mod` -- the clock modifier. See above for valid ranges.
 
 The submenu for each CV output has the following options:
 
@@ -97,28 +97,46 @@ The submenu for each CV output has the following options:
 - `ERot` -- rotation of the euclidean rhythm
 - `Quant` -- quantization scale
 
-The Reset wave fires only when the clock is stopped and can be used to help synchronize
-external modules (e.g. other sequencers, sequential switches, etc...)
+### Effects of Width on Different Wave Shapes
 
-The Run wave fires once when the clock is started.  The duration of the trigger is at least
-10ms, but may be longer depending on the BPM.  This allows you to start other modules at the
-same time as Pam's Workout on the EuroPi.
-
-(Implementation note: the duration of the `Run` trigger is based on the BPM of the master clock
-and the static PPQN of 24.  The trigger turns on immediately and stays on for each PPQN pulse
-until it's stayed on for at least 10ms.  At 120BPM this means the actual trigger duration is
-approximately 20.83ms, and at 60BPM it's approximately 41.7ms. Most modules that use an external
-start signal respond to the rising edge of the wave, so generally the width of the trigger
-shouldn't have any negative effects.)
-
-Effects of width control on different wave shapes:
 - Square: Duty cycle control. 0% is always off, 100% is always on
 - Triangle: Symmetry control. 50% results in a symmetrical wave, 0% results in a saw wave,
   100% results in a ramp
 - Sine: ignored
 - Random: offset voltage as a percentage of the maximum output
 - Reset: ignored
-- Run: ignores
+- Run: ignored
+
+### Reset and Run Waves
+
+The Reset wave fires only when the clock is stopped and can be used to help synchronize
+external modules (e.g. other sequencers, sequential switches, etc...)
+
+The Run wave fires once when the clock is started. The duration of the trigger is at least
+10ms, but may be longer depending on the BPM. This allows you to start other modules at the
+same time as Pam's Workout on the EuroPi.
+
+The duration of the `Run` trigger is based on the BPM of the master clock and the static PPQN of 48.
+The trigger turns on immediately and stays on for each PPQN pulse until it's stayed on for at least
+10ms. The table below shows approximate trigger times for some common BPM settings:
+
+| BPM | Trigger length (ms, approx.) | PPQN pulses |
+|-----|------------------------------|-------------|
+| 300 | 12.5                         | 3           |
+| 240 | 10.4                         | 2           |
+| 120 | 10.4                         | 1           |
+| 90  | 13.9                         | 1           |
+| 60  | 20.8                         | 1           |
+| 40  | 31.2                         | 1           |
+| 30  | 41.7                         | 1           |
+
+Most modules that use an external start trigger signal respond to the rising edge of the wave, so
+the variablility of the trigger width shouldn't cause any harmful effects in most cases.
+
+Note: Some modules, like the original Pamela's "NEW" Workout, use a gate signal to indicate
+on/off, turning on when the gate is high and off when it is low. To create an output of this nature,
+set an output channel to use a square wave and set the width to 100%. Ensure that skip and euclidean
+steps are both zero to make sure the signal stays high. Make sure the amplitude is at least 50%.
 
 ## AIN Routing Menu
 
@@ -140,6 +158,6 @@ The following properties can be CV controlled:
     - Quantizer
 
 Because many LFOs, EGs, and other modulation sources output 5V maximum, but the maximum input
-to EuroPi is 12V, the gain to `ain` can be increased by up to 300%.  This will artificially
+to EuroPi is 12V, the gain to `ain` can be increased by up to 300%. This will artificially
 increase the signal being applied to the desired property without the need for an external
 amplifier.
