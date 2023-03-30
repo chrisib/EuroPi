@@ -14,6 +14,7 @@ Each channel supports the following options:
     - sine
     - triangle
     - random
+    - start (trigger on clock start)
     - reset (trigger on clock stop)
 - amplitude %: height of the wave as a percentage of the maximum output voltage
 - width %: how wide is the wave
@@ -107,19 +108,19 @@ CLOCK_MODS = {
 
 ## Sorted list of labels for the clock modifers to display
 CLOCK_MOD_LABELS = [
-    "x8",
-    "x6",
-    "x4",
-    "x3",
-    "x2",
-    "x1",
-    "/2",
-    "/3",
-    "/4",
-    "/6",
-    "/8",
+    "/16",
     "/12",
-    "/16"
+    "/8",
+    "/6",
+    "/4",
+    "/3",
+    "/2",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x6",
+    "x8"
 ]
 
 ## Standard pulse/square wave with PWM
@@ -147,13 +148,19 @@ WAVE_RANDOM = 3
 #  Turns on when the clock stops
 WAVE_RESET = 4
 
+## Start gate
+#
+#  Turns on once when the clock starts
+WAVE_START = 5
+
 ## Available wave shapes
 WAVE_SHAPES = {
     "Squ" : WAVE_SQUARE,
     "Tri" : WAVE_TRIANGLE,
     "Sin" : WAVE_SIN,
     "Rnd" : WAVE_RANDOM,
-    "Rst" : WAVE_RESET
+    "Rst" : WAVE_RESET,
+    "Run" : WAVE_START
 }
 
 ## Ordered list of labels for the wave shape chooser menu
@@ -162,7 +169,8 @@ WAVE_SHAPE_LABELS = [
     "Tri",
     "Sin",
     "Rnd",
-    "Rst"
+    "Rst",
+    "Run"
 ]
 
 ## Sorted list of wave shapes to display
@@ -177,7 +185,8 @@ WAVE_SHAPE_IMGS = [
     b'\x06\x00\x06\x00\t\x00\t\x00\x10\x80\x10\x80 @ @@ @ \x80\x10\x80\x10',
     b'\x10\x00(\x00D\x00D\x00\x82\x00\x82\x00\x82\x10\x82\x10\x01\x10\x01\x10\x00\xa0\x00@',
     b'\x00\x00\x08\x00\x08\x00\x14\x00\x16\x80\x16\xa0\x11\xa0Q\xf0Pp`P@\x10\x80\x00',
-    b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00'
+    b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00',
+    b'\xfe\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x83\xf0',  # same as start
 ]
 
 ## Duration before we activate the screensaver
@@ -217,6 +226,8 @@ class MasterClock:
         self.channels = channels
         self.timer = Timer()
         self.recalculate_ticks()
+        
+        self.start_time = 0
         
     def to_dict(self):
         """Return a dict with the clock's parameters
@@ -275,6 +286,7 @@ class MasterClock:
         """
         if not self.is_running:
             self.is_running = True
+            self.start_time = time.ticks_ms()
             
             if self.reset_on_start:
                 for ch in self.channels:
@@ -301,6 +313,15 @@ class MasterClock:
             for ch in self.channels:
                 if ch.wave_shape == WAVE_RESET:
                     ch.cv_out.voltage(0)
+        
+    def running_time(self):
+        """Return how long the clock has been running
+        """
+        if self.is_running:
+            now = time.ticks_ms()
+            return time.ticks_diff(now, self.start_time)
+        else:
+            return 0
         
     def recalculate_ticks(self):
         """Recalculate the number of ms per tick
@@ -329,12 +350,17 @@ class PamsOutput:
     #  issues with RAM usage
     MAX_EUCLID_LENGTH = 16
     
-    def __init__(self, cv_out):
+    ## How long is a trigger sent by this output vs a gate?
+    TRIGGER_LENGTH_MS = 10
+    
+    def __init__(self, cv_out, clock):
         """Create a new output to control a single cv output
         
-        @param cv_out: One of the six output pins
+        @param cv_out  One of the six output jacks
+        @param clock  The MasterClock that controls the timing of this output
         """
         self.cv_out = cv_out
+        self.clock = clock
         
         ## What quantization are we using?
         #
@@ -524,6 +550,13 @@ class PamsOutput:
         by the amplitude and output voltage to produce the correct output
         """
         
+        if self.wave_shape == WAVE_RESET or self.wave_shape == WAVE_START:
+            # kick out immediately if this wave doesn't actually have a dynamic shape
+            # reset & start waves are controlled completely by the clock events, not
+            # any periodic shape
+            self.next_pattern = [0]
+            return
+        
         # always assume we're doing some kind of euclidean pattern
         e_pattern = [1]
         if self.e_step > 0:
@@ -553,17 +586,20 @@ class PamsOutput:
                     # the signal should be on
                     # generate the appropriate waveform
                     if self.wave_shape == WAVE_RANDOM:
+                        # signal that we should generate a new random voltage on this pulse
                         samples.append(1.0)
                     elif self.wave_shape == WAVE_SQUARE:
+                        # the first part of the square wave is on, the last part is off
+                        # cutoff depends on the duty-cycle/pulse width
                         duty_cycle = ticks_per_note * self.width / 100.0
                         if tick < duty_cycle:
                             samples.append(1.0)
                         else:
                             samples.append(0.0)
                     elif self.wave_shape == WAVE_TRIANGLE:
+                        # rising and then falling, with the peak dependent on the pulse width
                         rising_ticks = round(ticks_per_note * self.width / 100.0)
                         falling_ticks = ticks_per_note - rising_ticks
-                        
                         peak = 1.0
                         
                         if tick < rising_ticks:
@@ -581,8 +617,9 @@ class PamsOutput:
                             samples.append(volts)
                         
                     elif self.wave_shape == WAVE_SIN:
+                        # bog-standard sine wave
                         theta = tick / ticks_per_note * 2 * math.pi  # covert the tick to radians
-                        s_theta = (math.sin(theta) + 1 / 2)           # (sin(x) + 1)/2 since we can't output negative voltages
+                        s_theta = (math.sin(theta) + 1 / 2)          # (sin(x) + 1)/2 since we can't output negative voltages
                         
                         samples.append(s_theta)
                     else:
@@ -603,42 +640,50 @@ class PamsOutput:
     def tick(self):
         """Advance the current pattern one tick and set the output voltage
         """
-        # advance the playback position to the next sample
-        previous_sample_position = self.playback_position
-        self.playback_position = self.playback_position + 1
-        if self.playback_position >= len(self.playback_pattern):
-            self.playback_position = 0
-            
-            # if we've queued a pattern change, apply it now, once the current one ends
-            if self.next_pattern:
-                self.playback_pattern = self.next_pattern
-                self.next_pattern = None
-                previous_sample_position = len(self.playback_pattern) - 1
-        
-        out_volts = self.playback_pattern[self.playback_position]
-        
-        # are we restarting the pattern OR hitting a new pulse inside the euclidean rhythm?
-        rising_edge = self.playback_position == 0 or (self.playback_pattern[previous_sample_position] == 0 and self.playback_pattern[self.playback_position] > 0)
-        
-        # if we're starting a new signal, determine if we should skip it
-        if rising_edge:
-            self.skip_this_step = random.randint(0, 100) < self.skip
-        
-        # generate a new random voltage on the rising edge of the playback pattern
-        # otherwise just sustain the previous output
-        if self.wave_shape == WAVE_RANDOM:
-            if rising_edge and not self.skip_this_step:
-                out_volts = MAX_OUTPUT_VOLTAGE * random.random() * (self.amplitude / 100.0) + MAX_OUTPUT_VOLTAGE * (self.width / 100.0)
-            else:
-                out_volts = self.previous_voltage
-        else:
-            if not self.skip_this_step:
-                out_volts = MAX_OUTPUT_VOLTAGE * self.playback_pattern[self.playback_position] * (self.amplitude / 100.0)
+        # start waves are weird; they're only on during the first 10ms or 1 PPQN (whichever is longer)
+        # and are otherwise always off
+        if self.wave_shape == WAVE_ON:
+            if self.clock.running_time() <= self.TRIGGER_LENGTH_MS:
+                out_volts = 1.0
             else:
                 out_volts = 0.0
+        else:
+            # advance the playback position to the next sample
+            previous_sample_position = self.playback_position
+            self.playback_position = self.playback_position + 1
+            if self.playback_position >= len(self.playback_pattern):
+                self.playback_position = 0
+                
+                # if we've queued a pattern change, apply it now, once the current one ends
+                if self.next_pattern:
+                    self.playback_pattern = self.next_pattern
+                    self.next_pattern = None
+                    previous_sample_position = len(self.playback_pattern) - 1
             
-        if self.quantizer is not None:
-            (out_volts, note) = self.quantizer.quantize(out_volts)
+            out_volts = self.playback_pattern[self.playback_position]
+            
+            # are we restarting the pattern OR hitting a new pulse inside the euclidean rhythm?
+            rising_edge = self.playback_position == 0 or (self.playback_pattern[previous_sample_position] == 0 and self.playback_pattern[self.playback_position] > 0)
+            
+            # if we're starting a new signal, determine if we should skip it
+            if rising_edge:
+                self.skip_this_step = random.randint(0, 100) < self.skip
+            
+            # generate a new random voltage on the rising edge of the playback pattern
+            # otherwise just sustain the previous output
+            if self.wave_shape == WAVE_RANDOM:
+                if rising_edge and not self.skip_this_step:
+                    out_volts = MAX_OUTPUT_VOLTAGE * random.random() * (self.amplitude / 100.0) + MAX_OUTPUT_VOLTAGE * (self.width / 100.0)
+                else:
+                    out_volts = self.previous_voltage
+            else:
+                if not self.skip_this_step:
+                    out_volts = MAX_OUTPUT_VOLTAGE * self.playback_pattern[self.playback_position] * (self.amplitude / 100.0)
+                else:
+                    out_volts = 0.0
+                
+            if self.quantizer is not None:
+                (out_volts, note) = self.quantizer.quantize(out_volts)
             
         self.cv_out.voltage(out_volts)
         
@@ -1034,15 +1079,15 @@ class PamsWorkout(EuroPiScript):
     def __init__(self):
         super().__init__()
         
-        self.channels = [
-            PamsOutput(cv1),
-            PamsOutput(cv2),
-            PamsOutput(cv3),
-            PamsOutput(cv4),
-            PamsOutput(cv5),
-            PamsOutput(cv6),
-        ]
         self.clock = MasterClock(120, self.channels)
+        self.channels = [
+            PamsOutput(cv1, self.clock),
+            PamsOutput(cv2, self.clock),
+            PamsOutput(cv3, self.clock),
+            PamsOutput(cv4, self.clock),
+            PamsOutput(cv5, self.clock),
+            PamsOutput(cv6, self.clock),
+        ]
         self.cv_in = CVController(ain, self)
         
         ## The master top-level menu
