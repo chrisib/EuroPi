@@ -10,7 +10,7 @@ BPM (1-300 BPM supported). Each output has an independently controlled
 clock multiplier or divider, chosen from the following:
 
 ```
-[x8, x6, x4, x3, x2, x1, /2, /3, /4, /6, /8, /12, /16]
+[x16, x12, x8, x6, x4, x3, x2, x1, /2, /3, /4, /6, /8, /12, /16]
 ```
 
 ## I/O Mapping

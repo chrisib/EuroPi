@@ -92,6 +92,7 @@ QUANTIZER_LABELS = [
 ## Available clock modifiers
 CLOCK_MODS = {
     "x16": 16.0,
+    "x12": 12.0,
     "x8" : 8.0,
     "x6" : 6.0,
     "x4" : 4.0,
