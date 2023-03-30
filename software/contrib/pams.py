@@ -204,7 +204,7 @@ class MasterClock:
     ## The clock actually runs faster than its maximum BPM to allow
     #  clock divisions to work nicely
     #
-    #  Use 28 internal clock pulses per quarter note. This is slow enough
+    #  Use 48 internal clock pulses per quarter note. This is slow enough
     #  that we won't choke the CPU with interrupts, but smooth enough that we
     #  should be able to approximate complex waves.  Must be a multiple of
     #  3 to properly support triplets and a multiple of 16 to allow easy
