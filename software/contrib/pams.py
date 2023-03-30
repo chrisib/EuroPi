@@ -644,7 +644,7 @@ class PamsOutput:
         # and are otherwise always off
         if self.wave_shape == WAVE_ON:
             if self.clock.running_time() <= self.TRIGGER_LENGTH_MS:
-                out_volts = 1.0
+                out_volts = MAX_OUTPUT_VOLTAGE
             else:
                 out_volts = 0.0
         else:

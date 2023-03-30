@@ -85,7 +85,7 @@ Each of the 6 CV output channels has the following options:
 
 The submenu for each CV output has the following options:
 
-- `Wave` -- the wave shape to output. Square/Triangle/Sine/Random/Reset
+- `Wave` -- the wave shape to output. Square/Triangle/Sine/Random/Reset/Run
 - `Ampl.` -- the maximum amplitude of the output as a percentage of the 10V
   hardware maximum
 - `Width` -- width of the resulting wave. See below
@@ -100,6 +100,17 @@ The submenu for each CV output has the following options:
 The Reset wave fires only when the clock is stopped and can be used to help synchronize
 external modules (e.g. other sequencers, sequential switches, etc...)
 
+The Run wave fires once when the clock is started.  The duration of the trigger is at least
+10ms, but may be longer depending on the BPM.  This allows you to start other modules at the
+same time as Pam's Workout on the EuroPi.
+
+(Implementation note: the duration of the `Run` trigger is based on the BPM of the master clock
+and the static PPQN of 24.  The trigger turns on immediately and stays on for each PPQN pulse
+until it's stayed on for at least 10ms.  At 120BPM this means the actual trigger duration is
+approximately 20.83ms, and at 60BPM it's approximately 41.7ms. Most modules that use an external
+start signal respond to the rising edge of the wave, so generally the width of the trigger
+shouldn't have any negative effects.)
+
 Effects of width control on different wave shapes:
 - Square: Duty cycle control. 0% is always off, 100% is always on
 - Triangle: Symmetry control. 50% results in a symmetrical wave, 0% results in a saw wave,
@@ -107,6 +118,7 @@ Effects of width control on different wave shapes:
 - Sine: ignored
 - Random: offset voltage as a percentage of the maximum output
 - Reset: ignored
+- Run: ignores
 
 ## AIN Routing Menu
 
