@@ -795,7 +795,7 @@ class CVController:
         elif self.dest_key == "Clock Mod":
             return CLOCK_MOD_LABELS
         elif self.dest_key == "Wave":
-            return WAVE_SHAPE_LABELS
+            return ["Squ", "Tri", "Sin", "Rnd"]   # All WAVE_SHAPE_LABELS except the `Rst` and `Run` waves
         elif self.dest_key == "Width" or self.dest_key == "Ampl." or self.dest_key == "Skip%":
             return list(range(101))
         elif self.dest_key == "Quant.":

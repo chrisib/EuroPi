@@ -130,7 +130,7 @@ The following properties can be CV controlled:
     - BPM
 - CV 1-6:
     - Clock modifier
-    - Wave shape
+    - Wave shape (excluding `Run` and `Reset` waves)
     - Amplitude
     - Width
     - Skip
