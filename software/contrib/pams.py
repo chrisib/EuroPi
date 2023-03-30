@@ -91,6 +91,7 @@ QUANTIZER_LABELS = [
 
 ## Available clock modifiers
 CLOCK_MODS = {
+    "x16": 16.0,
     "x8" : 8.0,
     "x6" : 6.0,
     "x4" : 4.0,
@@ -120,7 +121,8 @@ CLOCK_MOD_LABELS = [
     "x3",
     "x4",
     "x6",
-    "x8"
+    "x8",
+    "x16"
 ]
 
 ## Standard pulse/square wave with PWM
@@ -202,11 +204,12 @@ class MasterClock:
     ## The clock actually runs faster than its maximum BPM to allow
     #  clock divisions to work nicely
     #
-    #  Use 24 internal clock pulses per quarter note. This is slow enough
+    #  Use 28 internal clock pulses per quarter note. This is slow enough
     #  that we won't choke the CPU with interrupts, but smooth enough that we
     #  should be able to approximate complex waves.  Must be a multiple of
-    #  3 to properly support triplets
-    PPQN = 24
+    #  3 to properly support triplets and a multiple of 16 to allow easy
+    #  semi-quavers
+    PPQN = 48
     
     ## The absolute slowest the clock can go
     MIN_BPM = 1
@@ -214,20 +217,28 @@ class MasterClock:
     ## The absolute fastest the clock can go
     MAX_BPM = 300
     
-    def __init__(self, bpm, channels):
+    def __init__(self, bpm):
         """Create the main clock to run at a given bpm
         @param bpm  The initial BPM to run the clock at
-        @param channels  A list of PamsOutput objects corresponding to the
-                         output channels
         """
+        self.channels = []
         self.is_running = False
         self.bpm = bpm
         self.reset_on_start = True
-        self.channels = channels
         self.timer = Timer()
         self.recalculate_ticks()
         
+        self.elapsed_pulses = 0
         self.start_time = 0
+        
+    def add_channels(self, channels):
+        """Add the CV channels that this clock is (indirectly) controlling
+        
+        @param channels  A list of PamsOutput objects corresponding to the
+                         output channels
+        """
+        for ch in channels:
+            self.channels.append(ch)
         
     def to_dict(self):
         """Return a dict with the clock's parameters
@@ -278,8 +289,10 @@ class MasterClock:
     def on_tick(self, timer):
         """Callback function for the timer's tick
         """
-        for ch in self.channels:
-            ch.tick()
+        if self.is_running:
+            for ch in self.channels:
+                ch.tick()
+            self.elapsed_pulses = self.elapsed_pulses + 1
         
     def start(self):
         """Start the timer
@@ -287,6 +300,7 @@ class MasterClock:
         if not self.is_running:
             self.is_running = True
             self.start_time = time.ticks_ms()
+            self.elapsed_pulses = 0
             
             if self.reset_on_start:
                 for ch in self.channels:
@@ -349,9 +363,6 @@ class PamsOutput:
     #  with a potentially very slow clock mod, this cannot be too high to avoid
     #  issues with RAM usage
     MAX_EUCLID_LENGTH = 16
-    
-    ## How long is a trigger sent by this output vs a gate?
-    TRIGGER_LENGTH_MS = 10
     
     def __init__(self, cv_out, clock):
         """Create a new output to control a single cv output
@@ -642,8 +653,9 @@ class PamsOutput:
         """
         # start waves are weird; they're only on during the first 10ms or 1 PPQN (whichever is longer)
         # and are otherwise always off
-        if self.wave_shape == WAVE_ON:
-            if self.clock.running_time() <= self.TRIGGER_LENGTH_MS:
+        if self.wave_shape == WAVE_START:
+            gate_len = self.clock.running_time()
+            if self.clock.elapsed_pulses == 0 or gate_len <= self.TRIGGER_LENGTH_MS:
                 out_volts = MAX_OUTPUT_VOLTAGE
             else:
                 out_volts = 0.0
@@ -1079,7 +1091,7 @@ class PamsWorkout(EuroPiScript):
     def __init__(self):
         super().__init__()
         
-        self.clock = MasterClock(120, self.channels)
+        self.clock = MasterClock(120)
         self.channels = [
             PamsOutput(cv1, self.clock),
             PamsOutput(cv2, self.clock),
@@ -1089,6 +1101,7 @@ class PamsWorkout(EuroPiScript):
             PamsOutput(cv6, self.clock),
         ]
         self.cv_in = CVController(ain, self)
+        self.clock.add_channels(self.channels)
         
         ## The master top-level menu
         self.main_menu = PamsMenu(self)
