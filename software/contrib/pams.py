@@ -303,6 +303,10 @@ class MasterClock:
         
         @raises KeyError if the key is invalid
         """
+        # kick out immediately if we're writing an exsting value
+        if self[key] == value:
+            return
+
         if key == "bpm":
             self.change_bpm(value)
         elif key == "reset_on_start":
@@ -559,6 +563,10 @@ class PamsOutput:
         
         @raises KeyError if the key is invalid
         """
+        # kick out immediately if we're writing an exsting value
+        if self[key] == value:
+            return
+
         if key == "clock_mod_txt":
             self.clock_mod_txt = value
             self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
@@ -627,7 +635,6 @@ class PamsOutput:
             # If this is a RUN or RESET wave, don't bother calculating the waveshape
             self.sample_pattern = [0] * ticks_per_note
         else:
-    
             for tick in range(ticks_per_note):
                 # the signal should be on
                 # generate the appropriate waveform
@@ -674,7 +681,10 @@ class PamsOutput:
                     samples.append(0.0)
         
         self.sample_lock.lock()
-        self.sample_position = round(self.sample_position / len(self.sample_pattern) * len(samples))
+        if len(self.sample_pattern) == 0:
+            self.sample_position = 0
+        else:
+            self.sample_position = round(self.sample_position / len(self.sample_pattern) * len(samples))
         self.sample_pattern = samples
         self.sample_lock.release()
     
@@ -687,9 +697,6 @@ class PamsOutput:
             self.next_e_pattern = None
             
         self.sample_position = 0
-        if self.next_sample_pattern:
-            self.sample_pattern = self.next_sample_pattern
-            self.next_sample_pattern = None
     
     def tick(self):
         """Advance the current pattern one tick and set the output voltage
@@ -733,7 +740,7 @@ class PamsOutput:
                 else:
                     wave_sample = self.previous_wave_sample
             else:
-                if not self.skip_this_step:
+                if not self.skip_this_step and self.e_pattern[self.e_position]:
                     wave_sample = wave_sample * (self.amplitude / 100.0)
                 else:
                     wave_sample = 0.0
@@ -743,7 +750,7 @@ class PamsOutput:
                 
             if self.quantizer is not None:
                 (out_volts, note) = self.quantizer.quantize(out_volts)
-            
+
             # increment the position within each playback pattern
             # if we've queued a new euclidean pattern apply it now so we
             # can start playing them on the next tick
@@ -752,7 +759,7 @@ class PamsOutput:
             self.sample_position = self.sample_position +1
             if self.sample_position >= len(self.sample_pattern):
                 self.sample_position = 0
-                    
+
                 if self.next_e_pattern:
                     # if we just finished a waveform and we have a new euclidean pattern, start it
                     # this will always line up with the current beat, but may be rotated relative to
@@ -768,9 +775,12 @@ class PamsOutput:
                     self.e_position = self.e_position + 1
                     if self.e_position >= len(self.e_pattern):
                         self.e_position = 0
-                    
+
             self.sample_lock.release()
         self.cv_out.voltage(out_volts)
+
+    def get_e_trigs_options(self):
+        return list(range(self.e_step+1))
 
 class CVController:
     """Allows the signal from AIN to be routed to another object to control its properties
@@ -944,6 +954,10 @@ class CVController:
             raise KeyError(f"Key \"{key}\" is not valid")
     
     def __setitem__(self, key, value):
+        # kick out immediately if we're writing an exsting value
+        if self[key] == value:
+            return
+
         if key == "dest_obj_txt":
             self.restore_previous()
             
@@ -1120,9 +1134,9 @@ class PamsMenu:
                 SettingChooser(f"CV{i+1} | Skip%", list(range(101)), script.channels[i], "skip"),
                 SettingChooser(f"CV{i+1} | ESteps", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_step"),
                 SettingChooser(f"CV{i+1} | EPulses", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_trig",
-                               validate_settings = lambda:list(range(script.channels[i].e_step+1))),
+                               validate_settings = script.channels[i].get_e_trigs_options),
                 SettingChooser(f"CV{i+1} | ERot.", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_rot",
-                               validate_settings = lambda:list(range(script.channels[i].e_step+1))),
+                               validate_settings = script.channels[i].get_e_trigs_options),
                 SettingChooser(f"CV{i+1} | Quant.", QUANTIZER_LABELS, script.channels[i], "quantizer_txt")
             ]))
             
