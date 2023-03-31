@@ -752,14 +752,23 @@ class PamsOutput:
             self.sample_position = self.sample_position +1
             if self.sample_position >= len(self.sample_pattern):
                 self.sample_position = 0
-                
-                self.e_position = self.e_position + 1
-                if self.e_position >= len(self.e_pattern):
-                    self.e_position = 0
                     
-                    if self.next_e_pattern:
-                        self.e_pattern = self.next_e_pattern
-                        self.next_e_pattern = None
+                if self.next_e_pattern:
+                    # if we just finished a waveform and we have a new euclidean pattern, start it
+                    # this will always line up with the current beat, but may be rotated relative to
+                    # other patterns currently playing.
+                    # rather than do a lot of math, treat this as a feature that if you change patterns
+                    # while playing, the new pattern starts right away instead of waiting for for the
+                    # end of (a potentially long, slow) pattern to finish
+                    self.e_position = 0
+                    self.e_pattern = self.next_e_pattern
+                    self.next_e_pattern = None
+                else:
+                    # if we've reached end of the euclidean pattern start it again
+                    self.e_position = self.e_position + 1
+                    if self.e_position >= len(self.e_pattern):
+                        self.e_position = 0
+                    
             self.sample_lock.release()
         self.cv_out.voltage(out_volts)
 
