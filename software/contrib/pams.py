@@ -406,10 +406,6 @@ class PamsOutput:
         self.cv_out = cv_out
         self.clock = clock
         
-        ## Controls access to self.sample_position and self.sample_pattern
-        #  during playback
-        self.sample_lock = Semaphore(1)
-        
         ## What quantization are we using?
         #
         #  See contrib.pams.QUANTIZERS
@@ -449,14 +445,13 @@ class PamsOutput:
         self.skip = 0
         
         ## The position we're currently playing inside playback_pattern
+        #
+        #  This increments once every tick
+        #  In prior revisions we pre-calculated the entire waveform, but that resulted in too much RAM overhead
+        #  so instead we dynamically calculate the waveshape
         self.sample_position = 0
         
-        ## The pre-calculated waveform we step through during playback
-        self.sample_pattern = [0]
-        
         ## The euclidean pattern we step through
-        #
-        #  Every 1 in this pattern corresponds to a complete walk-through of sample_pattern
         self.e_pattern = [1]
         
         ## Our current position within the euclidean pattern
@@ -477,7 +472,6 @@ class PamsOutput:
         self.skip_this_step = False
         
         self.recalculate_e_pattern()
-        self.recalculate_sample_pattern()
         
     def to_dict(self):
         """Return a dictionary with all the configurable settings to write to disk
@@ -525,7 +519,6 @@ class PamsOutput:
                 self.quantizer = None
         
         self.recalculate_e_pattern()
-        self.recalculate_sample_pattern()
         
     def __getitem__(self, key):
         """Equivalent of __setattr__ for values that can be set by the SettingChooser
@@ -570,7 +563,6 @@ class PamsOutput:
         if key == "clock_mod_txt":
             self.clock_mod_txt = value
             self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
-            self.recalculate_sample_pattern()
         elif key == "e_step":
             self.e_step = value
             # make sure the number of pulses & rotation are still valid!
@@ -590,12 +582,10 @@ class PamsOutput:
         elif key == "wave_shape_txt":
             self.wave_shape_txt = value
             self.wave_shape = WAVE_SHAPES[self.wave_shape_txt]
-            self.recalculate_sample_pattern()
         elif key == "amplitude":
             self.amplitude = value
         elif key == "width":
             self.width = value
-            self.recalculate_sample_pattern()
         elif key == "quantizer_txt":
             self.quantizer_txt = value
             if value in QUANTIZERS.keys():
@@ -614,79 +604,61 @@ class PamsOutput:
             e_pattern = generate_euclidean_pattern(self.e_step, self.e_trig, self.e_rot)
             
         self.next_e_pattern = e_pattern
+    
+    def square_wave(self, tick, n_ticks):
+        """Calculate the [0, 1] value of a square wave with PWM
+
+        @param tick  The current tick, in the range [0, n_ticks)
+        @param n_ticks  The number of ticks in which the wave must complete
         
-    def recalculate_sample_pattern(self):
-        """Recalculate the waveform sample that we play back
+        @return A value in the range [0, 1] indicating the height of the wave at this tick
         """
-        
-        # the generated samples as floats
-        # for most waveforms this is the raw voltage to send to the output
-        # for random waves this is just a 0/1 value to indicate when we should
-        # choose a new random voltage
-        samples = []
-        
-        # How many clock pulses do we need per note?
-        # All regular waveforms will be stretched to be exactly this long
-        # Note that we've set up our clock mods so this will _always_ be an integer
-        # and round is just there to handle floating point weirdness
-        ticks_per_note = round(MasterClock.PPQN / self.clock_mod)
-        
-        if self.wave_shape == WAVE_RESET or self.wave_shape == WAVE_START:
-            # If this is a RUN or RESET wave, don't bother calculating the waveshape
-            self.sample_pattern = [0] * ticks_per_note
+        # the first part of the square wave is on, the last part is off
+        # cutoff depends on the duty-cycle/pulse width
+        duty_cycle = n_ticks * self.width / 100.0
+        if tick < duty_cycle:
+            return 1.0
         else:
-            for tick in range(ticks_per_note):
-                # the signal should be on
-                # generate the appropriate waveform
-                if self.wave_shape == WAVE_RANDOM:
-                    # signal that we should generate a new random voltage on this pulse
-                    samples.append(1.0)
-                elif self.wave_shape == WAVE_SQUARE:
-                    # the first part of the square wave is on, the last part is off
-                    # cutoff depends on the duty-cycle/pulse width
-                    duty_cycle = ticks_per_note * self.width / 100.0
-                    if tick < duty_cycle:
-                        samples.append(1.0)
-                    else:
-                        samples.append(0.0)
-                elif self.wave_shape == WAVE_TRIANGLE:
-                    # rising and then falling, with the peak dependent on the pulse width
-                    rising_ticks = round(ticks_per_note * self.width / 100.0)
-                    falling_ticks = ticks_per_note - rising_ticks
-                    peak = 1.0
-                    
-                    if tick < rising_ticks:
-                        # we're on the rising side of the triangle wave
-                        step = peak / rising_ticks
-                        volts = step * tick
-                        samples.append(volts)
-                    elif tick == rising_ticks:
-                        # we're at the peak of the triangle
-                        samples.append(peak)
-                    else:
-                        # we're on the falling side of the triangle
-                        step = peak / falling_ticks
-                        volts = peak - step * (tick - rising_ticks)
-                        samples.append(volts)
-                    
-                elif self.wave_shape == WAVE_SIN:
-                    # bog-standard sine wave
-                    theta = tick / ticks_per_note * 2 * math.pi  # covert the tick to radians
-                    s_theta = (math.sin(theta) + 1 / 2)          # (sin(x) + 1)/2 since we can't output negative voltages
-                    
-                    samples.append(s_theta)
-                else:
-                    # unknown wave or not implemented yet
-                    # leave things off for safety
-                    samples.append(0.0)
+            return 0.0
+    
+    def triangle_wave(self, tick, n_ticks):
+        """Calculate the [0, 1] value of a triangle wave
+
+        @param tick  The current tick, in the range [0, n_ticks)
+        @param n_ticks  The number of ticks in which the wave must complete
         
-        self.sample_lock.lock()
-        if len(self.sample_pattern) == 0:
-            self.sample_position = 0
+        @return A value in the range [0, 1] indicating the height of the wave at this tick
+        """
+        # rising and then falling, with the peak dependent on the pulse width
+        rising_ticks = round(n_ticks * self.width / 100.0)
+        falling_ticks = n_ticks - rising_ticks
+        peak = 1.0
+        y = 0.0
+        
+        if tick < rising_ticks:
+            # we're on the rising side of the triangle wave
+            step = peak / rising_ticks
+            y = step * tick
+        elif tick == rising_ticks:
+            y = peak
         else:
-            self.sample_position = round(self.sample_position / len(self.sample_pattern) * len(samples))
-        self.sample_pattern = samples
-        self.sample_lock.release()
+            # we're on the falling side of the triangle
+            step = peak / falling_ticks
+            y = peak - step * (tick - rising_ticks)
+        return y
+    
+    def sine_wave(self, tick, n_ticks):
+        """Calculate the [0, 1] value of a sine wave
+
+        @param tick  The current tick, in the range [0, n_ticks)
+        @param n_ticks  The number of ticks in which the wave must complete
+        
+        @return A value in the range [0, 1] indicating the height of the wave at this tick
+        """
+        # bog-standard sine wave
+        theta = tick / n_ticks * 2 * math.pi  # covert the tick to radians
+        s_theta = (math.sin(theta) + 1 / 2)   # (sin(x) + 1)/2 since we can't output negative voltages
+        return s_theta
     
     def reset(self):
         """Reset the current output to the beginning
@@ -713,24 +685,34 @@ class PamsOutput:
             # reset waves are always low; the clock's stop() function handles triggering them
             out_volts = 0.0
         else:
-            # play the current sample, then advance to the next one
-            
-            # read the current sample SAFELY
-            # keep local copies in case anything changes (e.g. as a result of menu or CV inputs)
-            self.sample_lock.lock()
-            wave_position = self.sample_position
-            wave_sample = self.sample_pattern[self.sample_position]
-            wave = self.sample_pattern
-            self.sample_lock.release()
-            
+            ticks_per_note = round(MasterClock.PPQN / self.clock_mod)
             e_step = self.e_pattern[self.e_position]
-            
+            wave_position = self.sample_position
             # are we starting a new repeat of the pattern?
             rising_edge = wave_position == 0 and e_step
-            
             # determine if we should skip this sample playback
             if rising_edge:
                 self.skip_this_step = random.randint(0, 100) < self.skip
+            
+            wave_sample = int(e_step) * int (not self.skip_this_step)
+            if self.wave_shape == WAVE_RANDOM:
+                if rising_edge and not self.skip_this_step:
+                    wave_sample = random.random() * (self.amplitude / 100.0) + (self.width / 100.0)
+                else:
+                    wave_sample = self.previous_wave_sample
+            elif self.wave_shape == WAVE_SQUARE:
+                wave_sample = wave_sample * self.square_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
+            elif self.wave_shape == WAVE_TRIANGLE:
+                wave_sample = wave_sample * self.triangle_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
+            elif self.wave_shape == WAVE_SINE:
+                wave_sample = wave_sample * self.sine_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
+            
+            
+            
+            
+            
+            
+            
             
             # generate a new random voltage on the rising edge of the playback pattern
             # otherwise just sustain the previous output
@@ -754,10 +736,8 @@ class PamsOutput:
             # increment the position within each playback pattern
             # if we've queued a new euclidean pattern apply it now so we
             # can start playing them on the next tick
-            # this must be done thread safely
-            self.sample_lock.lock()
             self.sample_position = self.sample_position +1
-            if self.sample_position >= len(self.sample_pattern):
+            if self.sample_position >= ticks_per_note:
                 self.sample_position = 0
 
                 if self.next_e_pattern:
@@ -776,7 +756,6 @@ class PamsOutput:
                     if self.e_position >= len(self.e_pattern):
                         self.e_position = 0
 
-            self.sample_lock.release()
         self.cv_out.voltage(out_volts)
 
     def get_e_trigs_options(self):
