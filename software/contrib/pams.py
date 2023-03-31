@@ -654,10 +654,13 @@ class PamsOutput:
         @param n_ticks  The number of ticks in which the wave must complete
         
         @return A value in the range [0, 1] indicating the height of the wave at this tick
+        
+        Because EuroPi cannot output negative voltages, we shift the wave up so its middle is at 0.5 and peaks/troughs
+        are at 1.0 and 0.0 respectively
         """
         # bog-standard sine wave
         theta = tick / n_ticks * 2 * math.pi  # covert the tick to radians
-        s_theta = (math.sin(theta) + 1 / 2)   # (sin(x) + 1)/2 since we can't output negative voltages
+        s_theta = (math.sin(theta) + 1) / 2   # (sin(x) + 1)/2 since we can't output negative voltages
         return s_theta
     
     def reset(self):
@@ -704,28 +707,8 @@ class PamsOutput:
                 wave_sample = wave_sample * self.square_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
             elif self.wave_shape == WAVE_TRIANGLE:
                 wave_sample = wave_sample * self.triangle_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
-            elif self.wave_shape == WAVE_SINE:
+            elif self.wave_shape == WAVE_SIN:
                 wave_sample = wave_sample * self.sine_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
-            
-            
-            
-            
-            
-            
-            
-            
-            # generate a new random voltage on the rising edge of the playback pattern
-            # otherwise just sustain the previous output
-            if self.wave_shape == WAVE_RANDOM:
-                if rising_edge and not self.skip_this_step:
-                    wave_sample = random.random() * (self.amplitude / 100.0) + (self.width / 100.0)
-                else:
-                    wave_sample = self.previous_wave_sample
-            else:
-                if not self.skip_this_step and self.e_pattern[self.e_position]:
-                    wave_sample = wave_sample * (self.amplitude / 100.0)
-                else:
-                    wave_sample = 0.0
                 
             self.previous_wave_sample = wave_sample
             out_volts = wave_sample * MAX_OUTPUT_VOLTAGE
