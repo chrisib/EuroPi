@@ -151,28 +151,34 @@ WAVE_RANDOM = 3
 #  Turns on when the clock stops
 WAVE_RESET = 4
 
-## Start gate
+## Start trigger
 #
 #  Turns on once when the clock starts
 WAVE_START = 5
 
+## Gate, on while the clock is running and
+#  off when the clock stops
+WAVE_RUN = 6
+
 ## Available wave shapes
 WAVE_SHAPES = {
-    "Squ" : WAVE_SQUARE,
-    "Tri" : WAVE_TRIANGLE,
-    "Sin" : WAVE_SIN,
-    "Rnd" : WAVE_RANDOM,
-    "Rst" : WAVE_RESET,
-    "Run" : WAVE_START
+    "Square"   : WAVE_SQUARE,
+    "Triangle" : WAVE_TRIANGLE,
+    "Sine"     : WAVE_SIN,
+    "Random"   : WAVE_RANDOM,
+    "Reset"    : WAVE_RESET,
+    "Start"    : WAVE_START,
+    "Run"      : WAVE_RUN
 }
 
 ## Ordered list of labels for the wave shape chooser menu
 WAVE_SHAPE_LABELS = [
-    "Squ",
-    "Tri",
-    "Sin",
-    "Rnd",
-    "Rst",
+    "Square",
+    "Triangle",
+    "Sine",
+    "Random",
+    "Reset",
+    "Start",
     "Run"
 ]
 
@@ -189,7 +195,8 @@ WAVE_SHAPE_IMGS = [
     b'\x10\x00(\x00D\x00D\x00\x82\x00\x82\x00\x82\x10\x82\x10\x01\x10\x01\x10\x00\xa0\x00@',
     b'\x00\x00\x08\x00\x08\x00\x14\x00\x16\x80\x16\xa0\x11\xa0Q\xf0Pp`P@\x10\x80\x00',
     b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00',
-    b'\xfe\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x83\xf0',  # same as start
+    b'\xe0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xbf\xf0',
+    b'\xff\xf0\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00',
 ]
 
 ## Duration before we activate the screensaver
@@ -490,7 +497,7 @@ class PamsOutput:
         return {
             "clock_mod" : self.clock_mod_txt,
             "e_step"    : self.e_step,
-            "e_trig"   : self.e_trig,
+            "e_trig"    : self.e_trig,
             "e_rot"     : self.e_rot,
             "skip"      : self.skip,
             "wave"      : self.wave_shape_txt,
@@ -611,7 +618,7 @@ class PamsOutput:
         """
         # always assume we're doing some kind of euclidean pattern
         e_pattern = [1]
-        if self.e_step > 0 and self.wave_shape != WAVE_RESET and self.wave_shape != WAVE_START:
+        if self.e_step > 0:
             e_pattern = generate_euclidean_pattern(self.e_step, self.e_trig, self.e_rot)
             
         self.next_e_pattern = e_pattern
@@ -692,9 +699,11 @@ class PamsOutput:
             # and are otherwise always off
             gate_len = self.clock.running_time()
             if self.clock.elapsed_pulses == 0 or gate_len <= self.TRIGGER_LENGTH_MS:
-                out_volts = MAX_OUTPUT_VOLTAGE
+                out_volts = MAX_OUTPUT_VOLTAGE * self.amplitude / 100.0
             else:
                 out_volts = 0.0
+        elif self.wave_shape == WAVE_RUN:
+            out_volts = MAX_OUTPUT_VOLTAGE * self.amplitude / 100.0
         elif self.wave_shape == WAVE_RESET:
             # reset waves are always low; the clock's stop() function handles triggering them
             out_volts = 0.0
@@ -860,7 +869,7 @@ class CVController:
         elif self.dest_key == "Clock Mod":
             return CLOCK_MOD_LABELS
         elif self.dest_key == "Wave":
-            return ["Squ", "Tri", "Sin", "Rnd"]   # All WAVE_SHAPE_LABELS except the `Rst` and `Run` waves
+            return ["Square", "Triangle", "Sine", "Random"]   # All WAVE_SHAPE_LABELS except the `Start`, `Reset` and `Run` waves
         elif self.dest_key == "Width" or self.dest_key == "Ampl." or self.dest_key == "Skip%":
             return list(range(101))
         elif self.dest_key == "Quant.":

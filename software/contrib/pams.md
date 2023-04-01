@@ -89,7 +89,15 @@ Each of the 6 CV output channels has the following options:
 
 The submenu for each CV output has the following options:
 
-- `Wave` -- the wave shape to output. Square/Triangle/Sine/Random/Reset/Run
+- `Wave` -- the wave shape to output. Square/Triangle/Sine/Random/Reset/Start/Run
+  - Square: square/pulse wave with adjustable width
+  - Triangle: triangle wave with adjustable symmetry (saw to symmetrical triangle to ramp)
+  - Sine: bog-standard sine wave
+  - Random: outputs a random voltage at every tick, holding that voltage until the next tick
+  - Reset: a trigger that fires when the clock stops (can be used to trigger other modules to reset, e.g. sequencers
+    sequential switches, other euclidean generators)
+  - Start: a trigger that fires when the clock starts (can be used to trigger other modules)
+  - Run: a gate that is high when the clock is running and low when the clock is stopped
 - `Ampl.` -- the maximum amplitude of the output as a percentage of the 10V
   hardware maximum
 - `Width` -- width of the resulting wave. See below
@@ -109,6 +117,7 @@ The submenu for each CV output has the following options:
 - Sine: ignored
 - Random: offset voltage as a percentage of the maximum output
 - Reset: ignored
+- Start: ignored
 - Run: ignored
 
 ### Reset and Run Waves
@@ -152,7 +161,7 @@ The following properties can be CV controlled:
     - BPM
 - CV 1-6:
     - Clock modifier
-    - Wave shape (excluding `Run` and `Reset` waves)
+    - Wave shape (excluding `Start`, `Run` and `Reset` waves)
     - Amplitude
     - Width
     - Skip
