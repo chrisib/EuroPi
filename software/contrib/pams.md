@@ -90,14 +90,14 @@ Each of the 6 CV output channels has the following options:
 The submenu for each CV output has the following options:
 
 - `Wave` -- the wave shape to output. Square/Triangle/Sine/Random/Reset/Start/Run
-  - Square: square/pulse wave with adjustable width
-  - Triangle: triangle wave with adjustable symmetry (saw to symmetrical triangle to ramp)
-  - Sine: bog-standard sine wave
-  - Random: outputs a random voltage at every tick, holding that voltage until the next tick
-  - Reset: a trigger that fires when the clock stops (can be used to trigger other modules to reset, e.g. sequencers
+  - ![Square Wave](./pams-docs/wave_square.png) Square: square/pulse wave with adjustable width
+  - ![Triangle Wave](./pams-docs/wave_triangle.png) Triangle: triangle wave with adjustable symmetry (saw to symmetrical triangle to ramp)
+  - ![Sine Wave](./pams-docs/wave_sine.png) Sine: bog-standard sine wave
+  - ![Random Wave](./pams-docs/wave_random.png) Random: outputs a random voltage at every tick, holding that voltage until the next tick
+  - ![Reset Wave](./pams-docs/wave_reset.png) Reset: a trigger that fires when the clock stops (can be used to trigger other modules to reset, e.g. sequencers
     sequential switches, other euclidean generators)
-  - Start: a trigger that fires when the clock starts (can be used to trigger other modules)
-  - Run: a gate that is high when the clock is running and low when the clock is stopped
+  - ![Start Wave](./pams-docs/wave_start.png) Start: a trigger that fires when the clock starts (can be used to trigger other modules)
+  - ![Run Wave](./pams-docs/wave_run.png) Run: a gate that is high when the clock is running and low when the clock is stopped
 - `Ampl.` -- the maximum amplitude of the output as a percentage of the 10V
   hardware maximum
 - `Width` -- width of the resulting wave. See below
