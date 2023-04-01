@@ -88,7 +88,12 @@ The submenu for the main clock has the following options:
 
 Each of the 6 CV output channels has the following options:
 
-- `Mod` -- the clock modifier. See above for valid ranges.
+- `Mod` -- the clock modifier: `/16` to `x16`.  `x1` will output one waveform every beat (dictated by the BPM).
+  Multipliers (`xN`) will output `N` waveforms every beat.  Divisions (`/N`) will output a waveform every `N`
+  beats.
+
+The clock modifer is ignored if the wave is `Start`, `Reset` or `Run`, as these waves change only when the clock
+itself starts/stops and are not controlled by the BPM.
 
 The submenu for each CV output has the following options:
 
@@ -101,13 +106,10 @@ The submenu for each CV output has the following options:
     sequential switches, other euclidean generators)
   - ![Start Wave](./pams-docs/wave_start.png) Start: a trigger that fires when the clock starts (can be used to trigger other modules)
   - ![Run Wave](./pams-docs/wave_run.png) Run: a gate that is high when the clock is running and low when the clock is stopped
-- `Ampl.` -- the maximum amplitude of the output as a percentage of the 10V
-  hardware maximum
-- `Width` -- width of the resulting wave. See below
-- `Skip%` -- the probability that a square pulse or euclidean trigger
-  will be skipped
-- `EStep` -- the number of steps in the euclidean rhythm. If zero, the
-  euclidean generator is disabled
+- `Width` -- width of the resulting wave. See below for the effects of width adjustment on different wave shapes
+- `Ampl.` -- the maximum amplitude of the output as a percentage of the 12V hardware maximum
+- `Skip%` -- the probability that a square pulse or euclidean trigger will be skipped
+- `EStep` -- the number of steps in the euclidean rhythm. If zero, the euclidean generator is disabled
 - `ETrig` -- the number of pulses in the euclidean rhythm
 - `ERot` -- rotation of the euclidean rhythm
 - `Quant` -- quantization scale
@@ -153,6 +155,30 @@ Note: Some modules, like the original Pamela's "NEW" Workout, use a gate signal 
 on/off, turning on when the gate is high and off when it is low. To create an output of this nature,
 set an output channel to use a square wave and set the width to 100%. Ensure that skip and euclidean
 steps are both zero to make sure the signal stays high. Make sure the amplitude is at least 50%.
+
+### Quantization
+
+All quantizers are tuned to treat the root note of their respective scales as C.  There is no
+support for transposition; you will need to either combine outputs through a mixer or tune your
+oscillator to a different base frequency to transpose the output.
+
+The following scales are available:
+
+- `None` -- no quantization
+- `Chromatic` -- all 12 semitones can be output
+- `Nat Maj` -- natural major scale (C D E F G A B)
+- `Har Maj` -- harmonic major scale (C D E F G A# B#)
+- `Maj 135` -- natural major triad (C E G)
+- `Maj 1356` -- natural major triad + 6th (C E G A)
+- `Maj 1357` -- natural major triad + 7th (C E G B)
+- `Nat Min` -- natural minor scale (C D Eb F G Ab Bb)
+- `Har Min` -- harmonoc minor scale (C D Eb F G Ab B)
+- `Min 135` -- natural minor triad (C Eb G)
+- `Min 1356` -- natural minor triad + 6th (C Eb G Ab)
+- `Min 1357` -- natural minor triad + 7th (C Eb G Bb)
+- `Whole` -- whole tone scale (C D E F# G# A#)
+- `Dom 7` -- dominant 7th chord (C E G Bb)
+
 
 ## AIN Routing Menu
 

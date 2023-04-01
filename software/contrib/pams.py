@@ -58,21 +58,28 @@ QUANTIZERS = {
     #                        C      C#     D      D#     E      F      F#     G      G#     A      A#     B
     "Chromatic" : Quantizer([True,  True,  True,  True,  True,  True,  True,  True,  True,  True,  True,  True]),
 
+    # Major scales
     "Nat Maj"   : Quantizer([True,  False, True,  False, True,  True,  False, True,  False, True,  False, True]),
     "Har Maj"   : Quantizer([True,  False, True,  False, True,  True,  False, True,  True,  False, True,  False]),
     "Maj 135"   : Quantizer([True,  False, False, False, True,  False, False, True,  False, False, False, False]),
+    "Maj 1356"  : Quantizer([True,  False, False, False, True,  False, False, True,  False, True,  False, False]),
+    "Maj 1357"  : Quantizer([True,  False, False, False, True,  False, False, True,  False, False, False, True]),
 
+    # Minor scales
     "Nat Min"   : Quantizer([True,  False, True,  True,  False, True,  False, True,  True,  False, True,  False]),
     "Har Min"   : Quantizer([True,  False, True,  True,  False, True,  False, True,  True,  False, False, True]),
     "Min 135"   : Quantizer([True,  False, False, True,  False, False, False, True,  False, False, False, False]),
+    "Min 1356"  : Quantizer([True,  False, False, True,  False, False, False, True,  True,  False, False, False]),
+    "Min 1357"  : Quantizer([True,  False, False, True,  False, False, False, True,  False, False, True,  False]),
 
+    # Blues scales
+    "Maj Blues" : Quantizer([True,  False, True,  True,  True,  False, False, True,  False, True,  False, False]),  # 1-2-b3-3-5-6
+    "Min Blues" : Quantizer([True,  False, False, True,  False, True,  True,  True,  False,  False, True,  False]), # 1-b3-4-b5-5-b7
+
+    # Misc
     "Whole"     : Quantizer([True,  False, True,  False, True,  False, True,  False, True,  False, True,  False]),
-
-    "135b7"     : Quantizer([True,  False, False,  False, True, False, False, True,  False, False, True,  False])
-
-    # TODO: any additional scales?
-    # maybe 1-3-5 or 1-3-5-b7 ?
-    # Or some jazz scales?
+    "Penta"     : Quantizer([True,  False, True,  False, True,  False, False, True,  False, True,  False, False]),
+    "Dom 7"     : Quantizer([True,  False, False, False, True,  False, False, True,  False, False, True,  False])
 }
 
 ## Sorted list of names for the quantizers to display
