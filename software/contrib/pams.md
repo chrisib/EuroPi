@@ -53,6 +53,7 @@ The menu layout is as follows:
 |-- CV1
 |   |-- Mod.
 |   |   |-- Wave Shape
+|   |   |-- Wave Width (PWM/Symmetry)
 |   |   |-- Wave Amplitude
 |   |   |-- Skip Probability
 |   |   |-- Euclidean Steps
