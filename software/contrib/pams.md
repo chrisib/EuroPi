@@ -46,26 +46,29 @@ to apply it.
 The menu layout is as follows:
 
 ```
-|-- Clock
-|   |-- BPM
-|   |   |-- DIN Mode
-|   |   |-- Reset
-|-- CV1
-|   |-- Mod.
-|   |   |-- Wave Shape
-|   |   |-- Wave Width (PWM/Symmetry)
-|   |   |-- Wave Amplitude
-|   |   |-- Skip Probability
-|   |   |-- Euclidean Steps
-|   |   |-- Euclidean Triggers
-|   |   |-- Euclidean Rotation
-|   |   |-- Quantization Scale
-|-- CV2 to 6
-|   |-- Same as CV1
-|-- AIN
-|   |-- Gain
-|   |   |-- Destination Channel
-|   |   |-- Destination Property
+Clock
+ +-- BPM
+ |    +-- DIN Mode
+ |    +-- Reset
+ |
+CV1
+ +-- Mod.
+ |    +-- Wave Shape
+ |    +-- Wave Width (PWM/Symmetry)
+ |    +-- Wave Amplitude
+ |    +-- Skip Probability
+ |    +-- Euclidean Steps
+ |    +-- Euclidean Triggers
+ |    +-- Euclidean Rotation
+ |    +-- Quantization Scale
+ |
+CV2 to 6
+ +-- Same as CV1
+ |
+AIN
+ +-- Gain
+ |    +-- Destination Channel
+ |    +-- Destination Property
 ```
 
 ## Main Clock Options
