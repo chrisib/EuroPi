@@ -57,7 +57,7 @@ The menu layout is as follows:
 |   |   |-- Skip Probability
 |   |   |-- Euclidean Steps
 |   |   |-- Euclidean Triggers
-|   |   |-- Euclidean Rotatioj
+|   |   |-- Euclidean Rotation
 |   |   |-- Quantization Scale
 |-- CV2 to 6
 |   |-- Same as CV1
