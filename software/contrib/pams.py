@@ -198,6 +198,17 @@ SCREENSAVER_TIMEOUT_MS = 1000 * 60 * 5
 ## Duration before we blank the screen
 BLANK_TIMEOUT_MS = 1000 * 60 * 20
 
+## Do we use gate input on din to turn the module on/off
+DIN_MODE_GATE = 'Gate'
+
+## Do we toggle the module on/off with a trigger on din?
+DIN_MODE_TRIGGER = 'Trig'
+
+DIN_MODES = [
+    DIN_MODE_GATE,
+    DIN_MODE_TRIGGER
+]
+
 class Semaphore:
     """A very basic semaphore to provide minimal thread-safety for objects being manipulated in multiple ISRs
     """
@@ -1085,6 +1096,7 @@ class PamsMenu:
         
         self.items = [
             SettingChooser("BPM", list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1)), script.clock, "bpm", [
+                SettingChooser("DIN Mode", DIN_MODES, script, "din_mode"),
                 SettingChooser("Reset", [True, False], script.clock, "reset_on_start")
             ])
         ]
@@ -1137,6 +1149,8 @@ class PamsWorkout(EuroPiScript):
     def __init__(self):
         super().__init__()
         
+        self.din_mode = DIN_MODE_GATE
+        
         self.clock = MasterClock(120)
         self.channels = [
             PamsOutput(cv1, self.clock),
@@ -1160,6 +1174,21 @@ class PamsWorkout(EuroPiScript):
         #  This is used to wake the screensaver up and suppress the normal
         #  button operations while doing so
         self.last_interaction_time = time.ticks_ms()
+        
+        @din.handler
+        def on_din_rising():
+            if self.din_mode == DIN_MODE_GATE:
+                self.clock.start()
+            else:
+                if self.clock.is_running:
+                    self.clock.stop()
+                else:
+                    self.clock.start()
+            
+        @din.handler_falling
+        def on_din_falling():
+            if self.din_mode == DIN_MODE_GATE:
+                self.clock.stop()
         
         @b1.handler
         def on_b1_press():
@@ -1206,7 +1235,6 @@ class PamsWorkout(EuroPiScript):
                     self.save()
             
             self.last_interaction_time = now
-            
         
     def load(self):
         """Load parameters from persistent storage and apply them
@@ -1224,6 +1252,8 @@ class PamsWorkout(EuroPiScript):
         cv_cfg = state.get("ain", None)
         if cv_cfg:
             self.cv_in.load_settings(cv_cfg)
+            
+        self.din_mode = state.get("din", DIN_MODE_GATE)
         
     def save(self):
         """Save current settings to the persistent storage
@@ -1231,12 +1261,25 @@ class PamsWorkout(EuroPiScript):
         state = {
             "clock": self.clock.to_dict(),
             "channels": [],
-            "ain": self.cv_in.to_dict()
+            "ain": self.cv_in.to_dict(),
+            "din": self.din_mode
         }
         for i in range(len(self.channels)):
             state["channels"].append(self.channels[i].to_dict())
         
         self.save_state_json(state)
+        
+    def __getitem__(self, key):
+        if key == "din_mode":
+            return self.din_mode
+        else:
+            raise ValueError(f"Key {key} is not valid")
+        
+    def __setitem__(self, key, value):
+        if key == "din_mode":
+            self.din_mode = value
+        else:
+            raise ValueError(f"Key {key} is not valid")
         
     @classmethod
     def display_name(cls):

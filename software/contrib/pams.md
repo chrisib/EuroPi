@@ -48,6 +48,7 @@ The menu layout is as follows:
 ```
 |-- Clock
 |   |-- BPM
+|   |   |-- DIN Mode
 |   |   |-- Reset
 |-- CV1
 |   |-- Mod.
@@ -74,6 +75,8 @@ The main clock menu has the following options:
 
 The submenu for the main clock has the following options:
 
+- `DIN Mode` -- either `Gate` or `Trigger`.  If `Gate` the clock will run when the input is high. Otherwise
+  the clock will toggle on/off on the rising edge of the input signal
 - `Reset` -- if true, all waves & euclidean patterns will reset when the clock starts.
   Otherwise they will continue from where they stopped
 
