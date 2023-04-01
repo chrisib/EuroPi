@@ -89,11 +89,18 @@ QUANTIZER_LABELS = [
     "Nat Maj",
     "Har Maj",
     "Maj 135",
+    "Maj 1356",
+    "Maj 1357",
     "Nat Min",
     "Har Min",
     "Min 135",
+    "Min 1356",
+    "Min 1357",
+    "Maj Blues",
+    "Min Blues",
+    "Penta",
     "Whole",
-    "135b7"
+    "Dom 7"
 ]
 
 ## Available clock modifiers
