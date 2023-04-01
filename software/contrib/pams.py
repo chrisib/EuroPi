@@ -1248,21 +1248,25 @@ class PamsWorkout(EuroPiScript):
     def load(self):
         """Load parameters from persistent storage and apply them
         """
-        state = self.load_state_json()
-        
-        channel_cfgs = state.get("channels", [])
-        for i in range(len(channel_cfgs)):
-            self.channels[i].load_settings(channel_cfgs[i])
+        try:
+            state = self.load_state_json()
             
-        clock_cfg = state.get("clock", None)
-        if clock_cfg:
-            self.clock.load_settings(clock_cfg)
-            
-        cv_cfg = state.get("ain", None)
-        if cv_cfg:
-            self.cv_in.load_settings(cv_cfg)
-            
-        self.din_mode = state.get("din", DIN_MODE_GATE)
+            channel_cfgs = state.get("channels", [])
+            for i in range(len(channel_cfgs)):
+                self.channels[i].load_settings(channel_cfgs[i])
+                
+            clock_cfg = state.get("clock", None)
+            if clock_cfg:
+                self.clock.load_settings(clock_cfg)
+                
+            cv_cfg = state.get("ain", None)
+            if cv_cfg:
+                self.cv_in.load_settings(cv_cfg)
+                
+            self.din_mode = state.get("din", DIN_MODE_GATE)
+        except:
+            print("[ERR ] Error loading saved configuration for PamsWorkout")
+            print("[ERR ] Please delete the storage file and restart the module")
         
     def save(self):
         """Save current settings to the persistent storage
