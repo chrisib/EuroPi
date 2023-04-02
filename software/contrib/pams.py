@@ -55,6 +55,7 @@ LONG_PRESS_MS = 500
 
 ## The scales that each PamsOutput can quantize to
 QUANTIZERS = {
+    "None"      : None,
     #                        C      C#     D      D#     E      F      F#     G      G#     A      A#     B
     "Chromatic" : Quantizer([True,  True,  True,  True,  True,  True,  True,  True,  True,  True,  True,  True]),
 
@@ -175,15 +176,15 @@ WAVE_START = 5
 WAVE_RUN = 6
 
 ## Available wave shapes
-WAVE_SHAPES = {
-    "Square"   : WAVE_SQUARE,
-    "Triangle" : WAVE_TRIANGLE,
-    "Sine"     : WAVE_SIN,
-    "Random"   : WAVE_RANDOM,
-    "Reset"    : WAVE_RESET,
-    "Start"    : WAVE_START,
-    "Run"      : WAVE_RUN
-}
+WAVE_SHAPES = [
+    WAVE_SQUARE,
+    WAVE_TRIANGLE,
+    WAVE_SIN,
+    WAVE_RANDOM,
+    WAVE_RESET,
+    WAVE_START,
+    WAVE_RUN
+]
 
 ## Ordered list of labels for the wave shape chooser menu
 WAVE_SHAPE_LABELS = [
@@ -211,6 +212,7 @@ WAVE_SHAPE_IMGS = [
     bytearray(b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00'),
     bytearray(b'\xe0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xbf\xf0'),
     bytearray(b'\xff\xf0\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00'),
+    bytearray(b'\x06\x00\x19\x80\x19\x80`@`@`@\xff\xf0\xf9\xf0\xf9\xf0\xfd\xf0\xff\xf0\xff\xf0')
 ]
 
 STATUS_IMG_LOCK = bytearray(b'\x06\x00\x19\x80\x19\x80`@`@`@\xff\xf0\xf9\xf0\xf9\xf0\xfd\xf0\xff\xf0\xff\xf0')
@@ -260,35 +262,119 @@ class Semaphore:
         """
         self.value = self.value + 1
 
-class CvControllable:
-    def __init__(self):
-        self.cv_controlled_key = None
+class Setting:
+    """A single setting that can be loaded, saved, or dynamically read from an analog input
+    """
+    def __init__(self, display_name, storage_name, display_options, options, allow_cv_in=True, on_change_fn=None, value_dict=None, default_value=None):
+        self.display_name = display_name
+        self.display_options = []
+        for o in display_options:
+            self.display_options.append(o)
 
-    def __getitem__(self, key):
-        raise ValueError("Not implemented")
+        self.on_change_fn = on_change_fn
 
-    def __setitem__(self, key, value):
-        raise ValueError("Not Implemented")
-        
-    def set_cv_control(self, key, cv_control=True):
-        """Mark an attribute of this object as being under external CV control
+        self.storage_name = storage_name
+        self.options = []
+        for o in options:
+            self.options.append(o)
 
-        @param key  The key for __getitem__ and __setitem__ that is being controlled
-        @param cv_control  Is this attribute being controlled, or are we ceding control?
-        """
-        if cv_control:
-            self.cv_controlled_key = key
+        self.allow_cv_in = allow_cv_in
+        if allow_cv_in:
+            for cv in cv_ins.keys():
+                self.display_options.append(cv)
+                self.options.append(cv_ins[cv])
+
+        self.value_dict = value_dict
+        if default_value is not None:
+            self.choice = self.options.index(default_value)
         else:
-            self.cv_controlled_key = None
+            self.choice = 0
+        
+    def __str__(self):
+        return f"{self.display_name}"
 
-    def get_cv_control(self, key):
-        """Query whether or not the given key is CV controlled
+    def __len__(self):
+        return len(self.options)
 
-        @param key  The key for __getitem__ and __setitem__ that we're querying
-        """
-        return self.cv_controlled_key == key
+    def load(self, settings):
+        if "value" in settings.keys():
+            self.choice = settings["value"]
 
-class MasterClock(CvControllable):
+    def to_dict(self):
+        return {
+            "value": self.choice
+        }
+    
+    def update_options(self, display_options, options):
+        self.display_options = []
+        for o in display_options:
+            self.display_options.append(o)
+        self.options = []
+        for o in options:
+            self.options.append(o)
+            
+        if self.allow_cv_in:
+            for cv in cv_ins.keys():
+                self.display_options.append(cv)
+                self.options.append(cv_ins[cv])
+
+    def get_value(self):
+        if type(self.options[self.choice]) is AnalogInReader:
+            n = round(self.options[self.choice].get_value() / MAX_INPUT_VOLTAGE * len(self.options) - len(cv_ins)) # remo
+            if n < 0:
+                n = 0
+            elif n >= len(self.options) - len(cv_ins):
+                n = len(self.options) - len(cv_ins) - 1
+            key = n
+        else:
+            key = self.choice
+
+        opt = self.options[key]
+
+        if self.value_dict:
+            return self.value_dict[opt]
+        else:
+            return opt
+        
+    def get_display_value(self):
+        return self.display_options[self.choice]
+
+    def choose(self, index):
+        if self.choice != index and self.on_change_fn:
+            self.on_change_fn()
+        self.choice = index
+
+class AnalogInReader:
+    """A wrapper for `ain` that can be shared across multiple Settings
+    """
+    def __init__(self, cv_in):
+        self.cv_in = cv_in
+        self.last_voltage = 0.0
+        
+        self.gain = Setting("Gain", "gain", list(range(301)), list(range(301)), allow_cv_in=False, default_value=100)
+
+    def to_dict(self):
+        return {
+            "gain": self.gain.to_dict()
+        }
+    
+    def load_settings(self, settings):
+        if "gain" in settings.keys():
+            self.gain.load(settings["gain"])
+
+    def update(self):
+        self.last_voltage = self.cv_in.read_voltage() * self.gain.get_value() / 100.0
+        return self.last_voltage
+
+    def get_value(self):
+        return self.last_voltage
+
+## Wrapped copies of all CV inputs so we can iterate through them
+cv_ins = {    
+    "AIN": AnalogInReader(ain)
+}
+
+class MasterClock:
     """The main clock that ticks and runs the outputs
     """
 
@@ -312,12 +398,13 @@ class MasterClock(CvControllable):
         """Create the main clock to run at a given bpm
         @param bpm  The initial BPM to run the clock at
         """
-        CvControllable.__init__(self)
 
         self.channels = []
         self.is_running = False
-        self.bpm = bpm
-        self.reset_on_start = True
+
+        self.bpm = Setting("BPM", "bpm", list(range(self.MIN_BPM, self.MAX_BPM+1)), list(range(self.MIN_BPM, self.MAX_BPM+1)), on_change_fn=self.recalculate_ticks, default_value=60)
+        self.reset_on_start = Setting("Reset", "reset_on_start", ["On", "Off"], [True, False], False)
+
         self.timer = Timer()
         self.recalculate_ticks()
 
@@ -337,51 +424,21 @@ class MasterClock(CvControllable):
         """Return a dict with the clock's parameters
         """
         return {
-            "bpm": self.bpm,
-            "reset_on_start": self.reset_on_start
+            "bpm": self.bpm.to_dict(),
+            "reset_on_start": self.reset_on_start.to_dict()
         }
 
     def load_settings(self, settings):
         """Apply settings loaded from the configuration file
+
         @param settings  A dict containing the same fields as to_dict(self)
         """
-        if "bpm" in settings:
-            self.bpm = settings["bpm"]
-        if "reset_on_start" in settings:
-            self.reset_on_start = settings["reset_on_start"]
+        if "bpm" in settings.keys():
+            self.bpm.load(settings["bpm"])
+        if "reset_on_start" in settings.keys():
+            self.reset_on_start.load(settings["reset_on_start"])
 
         self.recalculate_ticks()
-
-    def __getitem__(self, key):
-        """Equivalent of __getattr__ for values that can be set by the SettingChooser
-        @param key  The name of the attribute we're getting
-
-        @raises KeyError if the key is invalid
-        """
-        if key == "bpm":
-            return self.bpm
-        elif key == "reset_on_start":
-            return self.reset_on_start
-        else:
-            raise KeyError(f"Key \"{key}\" is not valid")
-
-    def __setitem__(self, key, value):
-        """Equivalent of __setattr__ for values that can be set by the SettingChooser
-        @param key  The name of the attribute we're setting
-        @param value  The value we're assigning
-
-        @raises KeyError if the key is invalid
-        """
-        # kick out immediately if we're writing an exsting value
-        if self[key] == value:
-            return
-
-        if key == "bpm":
-            self.change_bpm(value)
-        elif key == "reset_on_start":
-            self.reset_on_start = value
-        else:
-            raise KeyError(f"Key \"{key}\" is not valid")
 
     def on_tick(self, timer):
         """Callback function for the timer's tick
@@ -399,7 +456,7 @@ class MasterClock(CvControllable):
             self.start_time = time.ticks_ms()
             self.elapsed_pulses = 0
 
-            if self.reset_on_start:
+            if self.reset_on_start.get_value():
                 for ch in self.channels:
                     ch.reset()
 
@@ -438,7 +495,7 @@ class MasterClock(CvControllable):
         """Recalculate the number of ms per tick
         If the timer is currently running deinitialize it and reset it to use the correct BPM
         """
-        min_per_beat = 1.0 / self.bpm
+        min_per_beat = 1.0 / self.bpm.get_value()
         self.ms_per_beat = min_per_beat * 60.0 * 1000.0
         self.ms_per_tick = self.ms_per_beat / self.PPQN
 
@@ -446,11 +503,7 @@ class MasterClock(CvControllable):
             self.timer.deinit()
             self.timer.init(period=round(self.ms_per_tick), mode=Timer.PERIODIC, callback=self.on_tick)
 
-    def change_bpm(self, new_bpm):
-        self.bpm = new_bpm
-        self.recalculate_ticks()
-
-class PamsOutput(CvControllable):
+class PamsOutput:
     """Controls a single output jack
     """
 
@@ -471,7 +524,6 @@ class PamsOutput(CvControllable):
         @param cv_out  One of the six output jacks
         @param clock  The MasterClock that controls the timing of this output
         """
-        CvControllable.__init__(self)
 
         self.cv_out = cv_out
         self.clock = clock
@@ -479,40 +531,37 @@ class PamsOutput(CvControllable):
         ## What quantization are we using?
         #
         #  See contrib.pams.QUANTIZERS
-        self.quantizer_txt = "None"
-        self.quantizer = None
+        self.quantizer = Setting("Quant.", "quantizer", QUANTIZER_LABELS, QUANTIZER_LABELS, value_dict=QUANTIZERS)
 
         ## The clock modifier for this channel
         #
         #  - 1.0 is the same as the main clock's BPM
         #  - <1.0 will tick slower than the BPM (e.g. 0.5 will tick once every 2 beats)
         #  - >1.0 will tick faster than the BPM (e.g. 3.0 will tick 3 times per beat)
-        self.clock_mod_txt = "x1"
-        self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
+        self.clock_mod = Setting("Mod", "clock_mod", CLOCK_MOD_LABELS, CLOCK_MOD_LABELS, value_dict=CLOCK_MODS, default_value="x1")
 
         ## What shape of wave are we generating?
         #
         #  For now, stick to square waves for triggers & gates
-        self.wave_shape = WAVE_SQUARE
-        self.wave_shape_txt = WAVE_SHAPE_LABELS[self.wave_shape]
+        self.wave_shape = Setting("Wave", "wave", WAVE_SHAPE_LABELS, WAVE_SHAPES, default_value=WAVE_SQUARE)
 
         ## The amplitude of the output as a [0, 100] percentage
-        self.amplitude = 50   # default to 5V gates
+        self.amplitude = Setting("Ampl.", "ampl", list(range(101)), list(range(101)), default_value=50)
 
         ## Wave width
-        self.width = 50
+        self.width = Setting("Width", "width", list(range(101)), list(range(101)), default_value=50)
 
         ## Euclidean -- number of steps in the pattern (0 = disabled)
-        self.e_step = 0
+        self.e_step = Setting("EStep", "e_step", list(range(self.MAX_EUCLID_LENGTH+1)), list(range(self.MAX_EUCLID_LENGTH)), on_change_fn=self.change_e_length, default_value=0)
 
         ## Euclidean -- number of triggers in the pattern
-        self.e_trig = 0
+        self.e_trig = Setting("ETrig", "e_trig", list(range(self.MAX_EUCLID_LENGTH+1)), list(range(self.MAX_EUCLID_LENGTH)), on_change_fn=self.recalculate_e_pattern, default_value=0)
 
         ## Euclidean -- rotation of the pattern
-        self.e_rot = 0
+        self.e_rot = Setting("ERot", "e_rot", list(range(self.MAX_EUCLID_LENGTH+1)), list(range(self.MAX_EUCLID_LENGTH)), on_change_fn=self.recalculate_e_pattern, default_value=0)
 
         ## Probability that we skip an output [0-100]
-        self.skip = 0
+        self.skip = Setting("Skip%", "skip", list(range(101)), list(range(101)), default_value=0)
 
         ## The position we're currently playing inside playback_pattern
         #
@@ -541,21 +590,21 @@ class PamsOutput(CvControllable):
         #  the current step
         self.skip_this_step = False
 
-        self.recalculate_e_pattern()
+        self.change_e_length()
 
     def to_dict(self):
         """Return a dictionary with all the configurable settings to write to disk
         """
         return {
-            "clock_mod" : self.clock_mod_txt,
-            "e_step"    : self.e_step,
-            "e_trig"    : self.e_trig,
-            "e_rot"     : self.e_rot,
-            "skip"      : self.skip,
-            "wave"      : self.wave_shape_txt,
-            "amplitude" : self.amplitude,
-            "width"     : self.width,
-            "quant"     : self.quantizer_txt
+            "clock_mod" : self.clock_mod.to_dict(),
+            "e_step"    : self.e_step.to_dict(),
+            "e_trig"    : self.e_trig.to_dict(),
+            "e_rot"     : self.e_rot.to_dict(),
+            "skip"      : self.skip.to_dict(),
+            "wave"      : self.wave_shape.to_dict(),
+            "amplitude" : self.amplitude.to_dict(),
+            "width"     : self.width.to_dict(),
+            "quantizer" : self.quantizer.to_dict()
         }
 
     def load_settings(self, settings):
@@ -563,115 +612,39 @@ class PamsOutput(CvControllable):
 
         @param settings  A dict with the same keys as the one returned by to_dict()
         """
-        if "clock_mod" in settings:
-            self.clock_mod_txt = settings["clock_mod"]
-            self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
-        if "e_step" in settings:
-            self.e_step = settings["e_step"]
-        if "e_trig" in settings:
-            self.e_trig = settings["e_trig"]
-        if "e_rot" in settings:
-            self.e_rot = settings["e_rot"]
-        if "skip" in settings:
-            self.skip = settings["skip"]
-        if "wave" in settings:
-            self.wave_shape_txt = settings["wave"]
-            self.wave_shape = WAVE_SHAPES[self.wave_shape_txt]
-        if "amplitude" in settings:
-            self.amplitude = settings["amplitude"]
-        if "width" in settings:
-            self.width = settings["width"]
-        if "quant" in settings:
-            self.quantizer_txt = settings["quant"]
-            if self.quantizer_txt in QUANTIZERS.keys():
-                self.quantizer = QUANTIZERS[self.quantizer_txt]
-            else:
-                self.quantizer = None
+        if "clock_mod" in settings.keys():
+            self.clock_mod.load(settings["clock_mod"])
+        if "e_step" in settings.keys():
+            self.e_step.load(settings["e_step"])
+        if "e_trig" in settings.keys():
+            self.e_trig.load(settings["e_trig"])
+        if "e_rot" in settings.keys():
+            self.e_rot.load(settings["e_rot"])
+        if "skip" in settings.keys():
+            self.skip.load(settings["skip"])
+        if "wave" in settings.keys():
+            self.wave_shape.load(settings["wave"])
+        if "amplitude" in settings.keys():
+            self.amplitude.load(settings["amplitude"])
+        if "width" in settings.keys():
+            self.width.load(settings["width"])
+        if "quantizer" in settings.keys():
+            self.quantizer.load(settings["quantizer"])
 
+        self.change_e_length()
+
+    def change_e_length(self):
+        self.e_trig.update_options(list(range(self.e_step.get_value()+1)), list(range(self.e_step.get_value()+1)))
+        self.e_rot.update_options(list(range(self.e_step.get_value()+1)), list(range(self.e_step.get_value()+1)))
         self.recalculate_e_pattern()
-
-    def __getitem__(self, key):
-        """Equivalent of __setattr__ for values that can be set by the SettingChooser
-
-        @param key  The name of the attribute we're getting
-
-        @raises KeyError if the key is invalid
-        """
-        if key == "clock_mod_txt":
-            return self.clock_mod_txt
-        elif key == "e_step":
-            return self.e_step
-        elif key == "e_trig":
-            return self.e_trig
-        elif key == "e_rot":
-            return self.e_rot
-        elif key == "skip":
-            return self.skip
-        elif key == "wave_shape_txt":
-            return self.wave_shape_txt
-        elif key == "amplitude":
-            return self.amplitude
-        elif key == "width":
-            return self.width
-        elif key == "quantizer_txt":
-            return self.quantizer_txt
-        else:
-            raise KeyError(f"Key \"{key}\" is not valid")
-
-    def __setitem__(self, key, value):
-        """Equivalent of __setattr__ for values that can be set by the SettingChooser
-
-        @param key  The name of the attribute we're setting
-        @param value  The value we're assigning
-
-        @raises KeyError if the key is invalid
-        """
-        # kick out immediately if we're writing an exsting value
-        if self[key] == value:
-            return
-
-        if key == "clock_mod_txt":
-            self.clock_mod_txt = value
-            self.clock_mod = CLOCK_MODS[self.clock_mod_txt]
-        elif key == "e_step":
-            self.e_step = value
-            # make sure the number of pulses & rotation are still valid!
-            if self.e_trig > self.e_step:
-                self.e_trig = self.e_step
-            if self.e_rot > self.e_step:
-                self.e_rot = self.e_step
-            self.recalculate_e_pattern()
-        elif key == "e_trig":
-            self.e_trig = value
-            self.recalculate_e_pattern()
-        elif key == "e_rot":
-            self.e_rot = value
-            self.recalculate_e_pattern()
-        elif key == "skip":
-            self.skip = value
-        elif key == "wave_shape_txt":
-            self.wave_shape_txt = value
-            self.wave_shape = WAVE_SHAPES[self.wave_shape_txt]
-        elif key == "amplitude":
-            self.amplitude = value
-        elif key == "width":
-            self.width = value
-        elif key == "quantizer_txt":
-            self.quantizer_txt = value
-            if value in QUANTIZERS.keys():
-                self.quantizer = QUANTIZERS[self.quantizer_txt]
-            else:
-                self.quantizer = None
-        else:
-            raise KeyError(f"Key \"{key}\" is not valid")
 
     def recalculate_e_pattern(self):
         """Recalulate the euclidean pattern this channel outputs
         """
         # always assume we're doing some kind of euclidean pattern
         e_pattern = [1]
-        if self.e_step > 0:
-            e_pattern = generate_euclidean_pattern(self.e_step, self.e_trig, self.e_rot)
+        if self.e_step.get_value() > 0:
+            e_pattern = generate_euclidean_pattern(self.e_step.get_value(), self.e_trig.get_value(), self.e_rot.get_value())
 
         self.next_e_pattern = e_pattern
 
@@ -685,7 +658,7 @@ class PamsOutput(CvControllable):
         """
         # the first part of the square wave is on, the last part is off
         # cutoff depends on the duty-cycle/pulse width
-        duty_cycle = n_ticks * self.width / 100.0
+        duty_cycle = n_ticks * self.width.get_value() / 100.0
         if tick < duty_cycle:
             return 1.0
         else:
@@ -700,7 +673,7 @@ class PamsOutput(CvControllable):
         @return A value in the range [0, 1] indicating the height of the wave at this tick
         """
         # rising and then falling, with the peak dependent on the pulse width
-        rising_ticks = round(n_ticks * self.width / 100.0)
+        rising_ticks = round(n_ticks * self.width.get_value() / 100.0)
         falling_ticks = n_ticks - rising_ticks
         peak = 1.0
         y = 0.0
@@ -746,47 +719,47 @@ class PamsOutput(CvControllable):
     def tick(self):
         """Advance the current pattern one tick and set the output voltage
         """
-        if self.wave_shape == WAVE_START:
+        if self.wave_shape.get_value() == WAVE_START:
             # start waves are weird; they're only on during the first 10ms or 1 PPQN (whichever is longer)
             # and are otherwise always off
             gate_len = self.clock.running_time()
             if self.clock.elapsed_pulses == 0 or gate_len <= self.TRIGGER_LENGTH_MS:
-                out_volts = MAX_OUTPUT_VOLTAGE * self.amplitude / 100.0
+                out_volts = MAX_OUTPUT_VOLTAGE * self.amplitude.get_value() / 100.0
             else:
                 out_volts = 0.0
-        elif self.wave_shape == WAVE_RUN:
-            out_volts = MAX_OUTPUT_VOLTAGE * self.amplitude / 100.0
-        elif self.wave_shape == WAVE_RESET:
+        elif self.wave_shape.get_value() == WAVE_RUN:
+            out_volts = MAX_OUTPUT_VOLTAGE * self.amplitude.get_value() / 100.0
+        elif self.wave_shape.get_value() == WAVE_RESET:
             # reset waves are always low; the clock's stop() function handles triggering them
             out_volts = 0.0
         else:
-            ticks_per_note = round(MasterClock.PPQN / self.clock_mod)
+            ticks_per_note = round(MasterClock.PPQN / self.clock_mod.get_value())
             e_step = self.e_pattern[self.e_position]
             wave_position = self.sample_position
             # are we starting a new repeat of the pattern?
             rising_edge = wave_position == 0 and e_step
             # determine if we should skip this sample playback
             if rising_edge:
-                self.skip_this_step = random.randint(0, 100) < self.skip
+                self.skip_this_step = random.randint(0, 100) < self.skip.get_value()
 
             wave_sample = int(e_step) * int (not self.skip_this_step)
-            if self.wave_shape == WAVE_RANDOM:
+            if self.wave_shape.get_value() == WAVE_RANDOM:
                 if rising_edge and not self.skip_this_step:
-                    wave_sample = random.random() * (self.amplitude / 100.0) + (self.width / 100.0)
+                    wave_sample = random.random() * (self.amplitude.get_value() / 100.0) + (self.width.get_value() / 100.0)
                 else:
                     wave_sample = self.previous_wave_sample
-            elif self.wave_shape == WAVE_SQUARE:
-                wave_sample = wave_sample * self.square_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
-            elif self.wave_shape == WAVE_TRIANGLE:
-                wave_sample = wave_sample * self.triangle_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
-            elif self.wave_shape == WAVE_SIN:
-                wave_sample = wave_sample * self.sine_wave(wave_position, ticks_per_note) * (self.amplitude / 100.0)
+            elif self.wave_shape.get_value() == WAVE_SQUARE:
+                wave_sample = wave_sample * self.square_wave(wave_position, ticks_per_note) * (self.amplitude.get_value() / 100.0)
+            elif self.wave_shape.get_value() == WAVE_TRIANGLE:
+                wave_sample = wave_sample * self.triangle_wave(wave_position, ticks_per_note) * (self.amplitude.get_value() / 100.0)
+            elif self.wave_shape.get_value() == WAVE_SIN:
+                wave_sample = wave_sample * self.sine_wave(wave_position, ticks_per_note) * (self.amplitude.get_value() / 100.0)
 
             self.previous_wave_sample = wave_sample
             out_volts = wave_sample * MAX_OUTPUT_VOLTAGE
 
-            if self.quantizer is not None:
-                (out_volts, note) = self.quantizer.quantize(out_volts)
+            if self.quantizer.get_value() is not None:
+                (out_volts, note) = self.quantizer.get_value().quantize(out_volts)
 
             # increment the position within each playback pattern
             # if we've queued a new euclidean pattern apply it now so we
@@ -813,354 +786,33 @@ class PamsOutput(CvControllable):
 
         self.cv_out.voltage(out_volts)
 
-    def get_e_trigs_options(self):
-        return list(range(self.e_step+1))
-
-class CVController(CvControllable):
-    """Allows the signal from AIN to be routed to another object to control its properties
-    """
-
-    DESTINATIONS = [
-        "None",
-        "Clock",
-        "CV1",
-        "CV2",
-        "CV3",
-        "CV4",
-        "CV5",
-        "CV6"
-    ]
-
-    def __init__(self, cv_in, application):
-        CvControllable.__init__(self)
-
-        ## Thread safety control to make sure we aren't CV-controlling an attribute _while_ updating whate attribute
-        #  we want to control
-        self.prev_state_lock = Semaphore(1)
-
-        self.app = application
-        self.cv_in = cv_in
-        self.dest_obj = None
-        self.dest_obj_txt = "None"
-        self.dest_key = "None"
-        self.gain = 100
-
-        self.prev_dest_obj_txt = "None"
-        self.prev_dest_key = "None"
-        self.prev_dest_value = None
-
-        self.dest_objects = {
-            "None"  : None,
-            "Clock" : self.app.clock,
-            "CV1"   : self.app.channels[0],
-            "CV2"   : self.app.channels[1],
-            "CV3"   : self.app.channels[2],
-            "CV4"   : self.app.channels[3],
-            "CV5"   : self.app.channels[4],
-            "CV6"   : self.app.channels[5]
-        }
-
-        cv_channel_dests = [
-            "Clock Mod",
-            "Wave",
-            "Width",
-            "Ampl.",
-            "Skip%",
-            "ESteps",
-            "ETrigs",
-            "ERot",
-            "Quant."
-        ]
-
-        self.dest_keys = {
-            "None"  : ["None"],
-            "Clock" : ["BPM"],
-            "CV1"   : cv_channel_dests,
-            "CV2"   : cv_channel_dests,
-            "CV3"   : cv_channel_dests,
-            "CV4"   : cv_channel_dests,
-            "CV5"   : cv_channel_dests,
-            "CV6"   : cv_channel_dests
-        }
-
-        self.none_keys = {
-            "None": "none"
-        }
-
-        self.clock_keys = {
-            "BPM": "bpm"
-        }
-
-        self.cv_keys = {
-            "Clock Mod" : "clock_mod_txt",
-            "Wave"      : "wave_shape_txt",
-            "Width"     : "width",
-            "Ampl."     : "amplitude",
-            "Skip%"     : "skip",
-            "ESteps"    : "e_step",
-            "ETrigs"    : "e_trig",
-            "ERot"      : "e_rot",
-            "Quant."    : "quantizer_txt"
-        }
-
-        self.low_level_keys = {
-            "None"  : self.none_keys,
-            "Clock" : self.clock_keys,
-            "CV1"   : self.cv_keys,
-            "CV2"   : self.cv_keys,
-            "CV3"   : self.cv_keys,
-            "CV4"   : self.cv_keys,
-            "CV5"   : self.cv_keys,
-            "CV6"   : self.cv_keys
-        }
-
-    def __clamp_euclid_range(self):
-        return list(range(self.dest_obj.e_step+1))
-
-    def __get_applicable_options(self):
-        if self.dest_key == "ETrigs" or self.dest_key == "ERot":
-            return self.__clamp_euclid_range()
-        elif self.dest_key == "ESteps":
-            return list(range(PamsOutput.MAX_EUCLID_LENGTH+1))
-        elif self.dest_key == "BPM":
-            return list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1))
-        elif self.dest_key == "Clock Mod":
-            return CLOCK_MOD_LABELS
-        elif self.dest_key == "Wave":
-            return ["Square", "Triangle", "Sine", "Random"]   # All WAVE_SHAPE_LABELS except the `Start`, `Reset` and `Run` waves
-        elif self.dest_key == "Width" or self.dest_key == "Ampl." or self.dest_key == "Skip%":
-            return list(range(101))
-        elif self.dest_key == "Quant.":
-            return QUANTIZER_LABELS
-        else:
-            return [0]
-
-    def get_dest_options(self):
-        return self.dest_keys[self.dest_obj_txt]
-
-    def to_dict(self):
-        """Return a dictionary with all the configurable settings to write to disk
-        """
-        return {
-            "dest_obj"  : self.dest_obj_txt,
-            "dest_key"  : self.dest_key,
-            "gain"      : self.gain,
-            "prev_obj"  : self.prev_dest_obj_txt,
-            "prev_key"  : self.prev_dest_key,
-            "prev_value": self.prev_dest_value
-        }
-
-    def load_settings(self, settings):
-        """Apply the settings loaded from storage
-
-        @param settings  A dict with the same keys as the one returned by to_dict()
-        """
-
-        if "dest_obj" in settings:
-            self.dest_obj_txt = settings["dest_obj"]
-            self.dest_obj = self.dest_objects[self.dest_obj_txt]
-
-        if "dest_key" in settings:
-            self.dest_key = settings["dest_key"]
-
-        if "gain" in settings:
-            self.gain = settings["gain"]
-
-        if "prev_obj" in settings:
-            self.prev_dest_obj_txt = settings["prev_obj"]
-
-        if "prev_key" in settings:
-            self.prev_dest_key = settings["prev_key"]
-
-        if "prev_value" in settings:
-            self.prev_dest_value = settings["prev_value"]
-
-        if self.dest_obj:
-            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
-            self.dest_obj.set_cv_control(low_level_key, True)
-
-    def restore_previous(self):
-        """Restore the pre-CV-controlled state of whatever object we're controlling
-        """
-        dest_obj = self.dest_objects[self.prev_dest_obj_txt]
-        if dest_obj:
-            print(f"[INFO] Restoring {self.dest_obj_txt}[{self.dest_key}] to {self.prev_dest_value}")
-            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
-            dest_obj[low_level_key] = self.prev_dest_value
-            dest_obj.set_cv_control(low_level_key, False)
-
-    def read_object_property(self, obj_key, prop_key):
-        """Read the raw property from the destination object
-
-        @param obj_key  The dest_obj key from dest_objects
-        @param prop_key  The dest_key key from dest_keys[obj_key]
-
-        @return the raw value for the given property, or None if there was an invalid key
-        """
-        dest_obj = self.dest_objects[self.prev_dest_obj_txt]
-        if dest_obj:
-            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
-            return dest_obj[low_level_key]
-        return None
-
-    def change_target_property(self, key):
-        """Change what attribute of the target object we're manipulating
-
-        @param key  The dest_key from dest_keys[self.dest_obj_txt]
-        """
-        self.prev_state_lock.lock()
-
-        # before we change anything, restore the previous state to the object
-        # this was saved before we took control of it via CV
-        self.restore_previous()
-
-        # read the current state of the new property and save it so we can restore later
-        self.dest_key = key
-        self.prev_dest_key = key
-        self.prev_dest_value = self.read_object_property(self.prev_dest_obj_txt, self.prev_dest_key)
-
-        if self.dest_obj:
-            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
-            self.dest_obj.set_cv_control(low_level_key, True)
-
-        self.prev_state_lock.release()
-
-    def change_target_object(self, key):
-        """Change the target object we're manupulating
-
-        @param key  The dest_obj key from dest_objects
-        """
-        self.prev_state_lock.lock()
-
-        # before we change anything, restore the previous state to the object
-        # this was saved before we took control of it via CV
-        self.restore_previous()
-
-        self.dest_obj_txt = key
-        self.dest_obj = self.dest_objects[key]
-
-        # Make sure the dest key is in the valid options for the dest object
-        if not (self.dest_key in self.dest_keys[self.dest_obj_txt]):
-            print(f"[WARN] {self.dest_key} isn't in {self.dest_obj_txt}. Resetting dest property to the default for this output")
-            self.dest_key = self.dest_keys[self.dest_obj_txt][0]
-
-        # read the current state of the object so we can restore it later
-        self.prev_dest_obj_txt = self.dest_obj_txt
-        self.prev_dest_key = self.dest_obj_txt
-        self.prev_dest_value = self.read_object_property(self.prev_dest_obj_txt, self.prev_dest_key)
-
-        if self.dest_obj:
-            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
-            self.dest_obj.set_cv_control(low_level_key, True)
-
-        self.prev_state_lock.release()
-
-    def __getitem__(self, key):
-        if key == "dest_obj_txt":
-            return self.dest_obj_txt
-        elif key == "dest_key":
-            return self.dest_key
-        elif key == "gain":
-            return self.gain
-        else:
-            raise KeyError(f"Key \"{key}\" is not valid")
-
-    def __setitem__(self, key, value):
-        # kick out immediately if we're writing an exsting value
-        if self[key] == value:
-            return
-
-        if key == "dest_obj_txt":
-            self.change_target_object(value)
-        elif key == "dest_key":
-            self.change_target_property(value)
-        elif key == "gain":
-            self.gain = value
-        else:
-            raise KeyError(f"Key \"{key}\" is not valid")
-
-    def read_and_apply(self):
-        """Read the analogue input and apply it to the destination object
-        """
-        self.prev_state_lock.lock()
-        try:
-            if self.dest_obj:
-                options = self.__get_applicable_options()
-                low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
-
-                volts = self.cv_in.read_voltage()
-                volts = volts * self.gain / 100.0
-                index = min(len(options)-1, round(volts / MAX_INPUT_VOLTAGE * len(options)))
-                self.dest_obj[low_level_key] = options[index]
-        except:
-            # If we're unlucky and modify the destination _during_ a thread interruption
-            # we can get thread-unsafe and have a bad key
-            # Just suppress the error and carry on
-            pass
-        self.prev_state_lock.release()
-
 class SettingChooser:
-    """Menu UI element for displaying an option and the choices associated with it
+    """Menu UI element for displaying a Setting object and the options associated with it
     """
-    def __init__(self, title, options, dest_obj, dest_prop, submenu=None, gfx=None, validate_settings=None):
+    def __init__(self, prefix, setting, gfx=None, submenu=[]):
         """Create a setting chooser for a given item
 
-        The dest_obj must implement __getitem__ and __setitem__, since this version of
-        micropython doesn't support __getattr__ and __setattr__.
-
-        When the value is written to dest_obj we call
-        ```
-        dest_obj[dest_pro] = NEW_VALUE
-        ```
-
-        Any validation must be done on the object end inside the __setitem__ implementation
-
-        @param title  The title of this menu item
-        @param options  The available values we actually choose from
-        @param dest_obj  The object whose property we're editing, e.g. a MasterClock instance
-        @param dest_prop  The name of the attribute of dest_obj to edit.
+        @param prefix  A prefix we show before the option title (e.g. 'CV1 | ')
+        @param setting  The Setting object we're manipulating
         @param submenu  A list of SettingChooser items that make up this setting's submenu
         @param gfx  A list of 12x12 pixel bitmaps we can optionally display beside option_txt
-        @param validate_settings  A function for this chooser to call that will return a new value for options
-               to ensure that we have the correct range.  Needed if setting X's options depend on the value of
-               setting Y
         """
-
-        self.title = title
-        self.options = options
-        self.option_gfx = gfx
-        self.dest_obj = dest_obj
-        self.dest_prop = dest_prop
-
+        self.prefix = prefix
+        self.setting = setting
         self.submenu = submenu
-
-        self.validate_settings_fn = validate_settings
+        self.option_gfx = gfx
 
         self.is_writable = False
 
     def __str__(self):
-        return f"Setting Chooser for {dest_obj}.{dest_prop}"
-
-    def reconfigure_options(self, options):
-        """Reconfigure the the available options.
-
-        For example, if we change the number of steps in a Euclidean rhythm, the number of
-        pulses cannot exceed the number of steps
-
-        @param options  The new set of options we allow
-        """
-        self.options = options
+        return f"Setting Chooser for {self.prefix}{self.setting}"
 
     def set_editable(self, can_edit):
         """Set whether or not we can write to this setting
 
         @param can_edit  If True, we can write a new value
         """
-
-        if not self.dest_obj.get_cv_control(self.dest_prop):
-            self.is_writable = can_edit
-        else:
-            self.is_writable = False
+        self.is_writable = can_edit
 
     def is_editable(self):
         return self.is_writable
@@ -1174,7 +826,7 @@ class SettingChooser:
 
         text_left = 0
 
-        oled.text(f"{self.title}", 0, 0)
+        oled.text(f"{self.prefix}{self.setting.display_name}", 0, 0)
 
         if self.option_gfx is not None:
             # draw the option thumbnail to the screen
@@ -1182,19 +834,15 @@ class SettingChooser:
             if self.is_writable:
                 img = k2.choice(self.option_gfx)
             else:
-                key = self.dest_obj[self.dest_prop]
-                index = self.options.index(key)
-                img = self.option_gfx[index]
+                key = self.setting.get_value()
+                img = self.option_gfx[key]
             imgFB = FrameBuffer(img, 12, 12, MONO_HLSB)
             oled.blit(imgFB, 0, SELECT_OPTION_Y)
 
 
         if self.is_writable:
-            if self.validate_settings_fn:
-                self.options = self.validate_settings_fn()
-
             # draw the selection in inverted text
-            selected_item = k2.choice(self.options)
+            selected_item = k2.choice(self.setting.display_options)
             choice_text = f"{selected_item}"
             text_width = len(choice_text)*CHAR_WIDTH
 
@@ -1202,19 +850,14 @@ class SettingChooser:
             oled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 0)
         else:
             # draw the selection in normal text
-            choice_text = f"{self.dest_obj[self.dest_prop]}"
+            choice_text = f"{self.setting.get_display_value()}"
             oled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 1)
-
-        if self.dest_obj.get_cv_control(self.dest_prop):
-            imgFB = FrameBuffer(STATUS_IMG_LOCK, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
-            oled.blit(imgFB, OLED_WIDTH - 2*STATUS_IMG_WIDTH, 0)
 
     def on_click(self):
         if self.is_writable:
             self.set_editable(False)
-            selected_item = k2.choice(self.options)
-
-            self.dest_obj[self.dest_prop] = selected_item
+            selected_index = k2.choice(list(range(len(self.setting))))
+            self.setting.choose(selected_index)
         else:
             self.set_editable(True)
 
@@ -1228,29 +871,26 @@ class PamsMenu:
         self.pams_workout = script
 
         self.items = [
-            SettingChooser("BPM", list(range(MasterClock.MIN_BPM, MasterClock.MAX_BPM+1)), script.clock, "bpm", [
-                SettingChooser("DIN Mode", DIN_MODES, script, "din_mode"),
-                SettingChooser("Reset", [True, False], script.clock, "reset_on_start")
+            SettingChooser("", script.clock.bpm, None, [
+                SettingChooser("", script.din_mode, None, []),
+                SettingChooser("", script.clock.reset_on_start, None, [])
             ])
         ]
         for i in range(len(script.channels)):
-            self.items.append(SettingChooser(f"CV{i+1} | Clk Mod", CLOCK_MOD_LABELS, script.channels[i], "clock_mod_txt", [
-                SettingChooser(f"CV{i+1} | Wave", WAVE_SHAPE_LABELS, script.channels[i], "wave_shape_txt", gfx=WAVE_SHAPE_IMGS),
-                SettingChooser(f"CV{i+1} | Width.", list(range(101)), script.channels[i], "width"),
-                SettingChooser(f"CV{i+1} | Ampl.", list(range(101)), script.channels[i], "amplitude"),
-                SettingChooser(f"CV{i+1} | Skip%", list(range(101)), script.channels[i], "skip"),
-                SettingChooser(f"CV{i+1} | ESteps", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_step"),
-                SettingChooser(f"CV{i+1} | EPulses", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_trig",
-                               validate_settings = script.channels[i].get_e_trigs_options),
-                SettingChooser(f"CV{i+1} | ERot.", list(range(PamsOutput.MAX_EUCLID_LENGTH+1)), script.channels[i], "e_rot",
-                               validate_settings = script.channels[i].get_e_trigs_options),
-                SettingChooser(f"CV{i+1} | Quant.", QUANTIZER_LABELS, script.channels[i], "quantizer_txt")
+            prefix = f"CV{i+1} | "
+            ch = script.channels[i]
+            self.items.append(SettingChooser(prefix, ch.clock_mod, None, [
+                SettingChooser(prefix, ch.wave_shape, WAVE_SHAPE_IMGS, []),
+                SettingChooser(prefix, ch.width),
+                SettingChooser(prefix, ch.amplitude),
+                SettingChooser(prefix, ch.skip),
+                SettingChooser(prefix, ch.e_step),
+                SettingChooser(prefix, ch.e_trig),
+                SettingChooser(prefix, ch.e_rot),
+                SettingChooser(prefix, ch.quantizer)
             ]))
-
-        self.items.append(SettingChooser(f"AIN | Gain%", list(range(301)), script.cv_in, "gain", [
-            SettingChooser("AIN | Dest.", CVController.DESTINATIONS, script.cv_in, "dest_obj_txt"),
-            SettingChooser("AIN | Prop", [], script.cv_in, "dest_key", validate_settings = script.cv_in.get_dest_options)
-        ]))
+        for ch in cv_ins.keys():
+            self.items.append(SettingChooser(f"{ch} | ", cv_ins[ch].gain, None, []))
 
         self.active_items = self.items
 
@@ -1282,7 +922,7 @@ class PamsWorkout(EuroPiScript):
     def __init__(self):
         super().__init__()
 
-        self.din_mode = DIN_MODE_GATE
+        self.din_mode = Setting("DIN Mode", "din", DIN_MODES, DIN_MODES, False)
 
         self.clock = MasterClock(120)
         self.channels = [
@@ -1293,7 +933,6 @@ class PamsWorkout(EuroPiScript):
             PamsOutput(cv5, self.clock),
             PamsOutput(cv6, self.clock),
         ]
-        self.cv_in = CVController(ain, self)
         self.clock.add_channels(self.channels)
 
         ## The master top-level menu
@@ -1383,11 +1022,15 @@ class PamsWorkout(EuroPiScript):
             if clock_cfg:
                 self.clock.load_settings(clock_cfg)
 
-            cv_cfg = state.get("ain", None)
-            if cv_cfg:
-                self.cv_in.load_settings(cv_cfg)
+            din_cfg = state.get("din", None)
+            if din_cfg:
+                self.din_mode.load(din_cfg)
 
-            self.din_mode = state.get("din", DIN_MODE_GATE)
+            ain_cfg = state.get("ain", [])
+            cv_keys = list(cv_ins.keys())
+            for i in range(len(ain_cfg)):
+                cv_ins[cv_keys[i]].load_settings(ain_cfg[i])
+
         except:
             print("[ERR ] Error loading saved configuration for PamsWorkout")
             print("[ERR ] Please delete the storage file and restart the module")
@@ -1398,25 +1041,15 @@ class PamsWorkout(EuroPiScript):
         state = {
             "clock": self.clock.to_dict(),
             "channels": [],
-            "ain": self.cv_in.to_dict(),
-            "din": self.din_mode
+            "din": self.din_mode.to_dict(),
+            "ain": []
         }
         for i in range(len(self.channels)):
             state["channels"].append(self.channels[i].to_dict())
+        for cv in cv_ins.keys():
+            state["ain"].append(cv_ins[cv].to_dict())
 
         self.save_state_json(state)
-
-    def __getitem__(self, key):
-        if key == "din_mode":
-            return self.din_mode
-        else:
-            raise ValueError(f"Key {key} is not valid")
-
-    def __setitem__(self, key, value):
-        if key == "din_mode":
-            self.din_mode = value
-        else:
-            raise ValueError(f"Key {key} is not valid")
 
     @classmethod
     def display_name(cls):
@@ -1428,7 +1061,8 @@ class PamsWorkout(EuroPiScript):
         while True:
             now = time.ticks_ms()
 
-            self.cv_in.read_and_apply()
+            for cv in cv_ins.values():
+                cv.update()
 
             if time.ticks_diff(now, self.last_interaction_time) > BLANK_TIMEOUT_MS:
                 self.screensaver.draw_blank()
