@@ -29,10 +29,14 @@ clock multiplier or divider, chosen from the following:
 
 The input signal to `ain` can be configured to control many parameters of the system.
 A value of 0V is the equivalent of choosing the first item from the available menu
-and 10V is the equivalent of choosing the last item in the menu.
+and 12V is the equivalent of choosing the last item in the menu.
 
-There is no attenuation of the input signal available, so you will have to use an
-external attenuator or VCA to control the signal coming into `ain`.
+There is digital attenuation/gain via the `AIN > Gain` menu option.  This sets the percentage
+of the input signal that is passed to settings listenting to `ain`.
+
+For example, if your modulation source can only output up to 5V you should set the gain to
+`12.0 / 5.0 * 100.0 = 240%`.  This will allow the modulation source to fully sweep the
+range of options available.
 
 ## Menu Navigation
 
@@ -47,29 +51,29 @@ The menu layout is as follows:
 
 ```
 Clock
- +-- BPM
+ +-- BPM*
  |    +-- DIN Mode
  |    +-- Reset
  |
 CV1
- +-- Mod.
- |    +-- Wave Shape
- |    +-- Wave Width (PWM/Symmetry)
- |    +-- Wave Amplitude
- |    +-- Skip Probability
- |    +-- Euclidean Steps
- |    +-- Euclidean Triggers
- |    +-- Euclidean Rotation
- |    +-- Quantization Scale
+ +-- Mod.*
+ |    +-- Wave Shape*
+ |    +-- Wave Width (PWM/Symmetry)*
+ |    +-- Wave Amplitude*
+ |    +-- Skip Probability*
+ |    +-- Euclidean Steps*
+ |    +-- Euclidean Triggers*
+ |    +-- Euclidean Rotation*
+ |    +-- Quantization Scale*
  |
 CV2 to 6
  +-- Same as CV1
  |
 AIN
  +-- Gain
- |    +-- Destination Channel
- |    +-- Destination Property
 ```
+
+Items marked with a `*` character have the option to be CV-controlled via `ain`
 
 ## Main Clock Options
 
@@ -181,28 +185,3 @@ The following scales are available:
 - `Whole` -- whole tone scale (C D E F# G# A#)
 - `Penta` -- pentatonic scale (C D E G A)
 - `Dom 7` -- dominant 7th chord (C E G Bb)
-
-
-## AIN Routing Menu
-
-The signal to `ain` can be routed to the master clock or any of the CV channels.
-
-The following properties can be CV controlled:
-
-- Master Clock:
-    - BPM
-- CV 1-6:
-    - Clock modifier
-    - Wave shape (excluding `Start`, `Run` and `Reset` waves)
-    - Amplitude
-    - Width
-    - Skip
-    - Euclidean steps
-    - Euclidean pulses
-    - Euclidean rotation
-    - Quantizer
-
-Because many LFOs, EGs, and other modulation sources output 5V maximum, but the maximum input
-to EuroPi is 12V, the gain to `ain` can be increased by up to 300%. This will artificially
-increase the signal being applied to the desired property without the need for an external
-amplifier.
