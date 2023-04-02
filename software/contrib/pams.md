@@ -176,7 +176,10 @@ The following scales are available:
 - `Min 135` -- natural minor triad (C Eb G)
 - `Min 1356` -- natural minor triad + 6th (C Eb G Ab)
 - `Min 1357` -- natural minor triad + 7th (C Eb G Bb)
+- `Maj Blues` -- major blues scale (C D Eb E G A)
+- `Min Blues` -- minor blues scale (C Eb F Gb G Bb)
 - `Whole` -- whole tone scale (C D E F# G# A#)
+- `Penta` -- pentatonic scale (C D E G A)
 - `Dom 7` -- dominant 7th chord (C E G Bb)
 
 

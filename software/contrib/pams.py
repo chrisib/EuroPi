@@ -204,14 +204,21 @@ WAVE_SHAPE_LABELS = [
 #  - https://github.com/Allen-Synthesis/EuroPi/blob/main/software/oled_tips.md
 #  - https://github.com/novaspirit/img2bytearray
 WAVE_SHAPE_IMGS = [
-    b'\xfe\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x83\xf0',
-    b'\x06\x00\x06\x00\t\x00\t\x00\x10\x80\x10\x80 @ @@ @ \x80\x10\x80\x10',
-    b'\x10\x00(\x00D\x00D\x00\x82\x00\x82\x00\x82\x10\x82\x10\x01\x10\x01\x10\x00\xa0\x00@',
-    b'\x00\x00\x08\x00\x08\x00\x14\x00\x16\x80\x16\xa0\x11\xa0Q\xf0Pp`P@\x10\x80\x00',
-    b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00',
-    b'\xe0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xbf\xf0',
-    b'\xff\xf0\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00',
+    bytearray(b'\xfe\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x82\x00\x83\xf0'),
+    bytearray(b'\x06\x00\x06\x00\t\x00\t\x00\x10\x80\x10\x80 @ @@ @ \x80\x10\x80\x10'),
+    bytearray(b'\x10\x00(\x00D\x00D\x00\x82\x00\x82\x00\x82\x10\x82\x10\x01\x10\x01\x10\x00\xa0\x00@'),
+    bytearray(b'\x00\x00\x08\x00\x08\x00\x14\x00\x16\x80\x16\xa0\x11\xa0Q\xf0Pp`P@\x10\x80\x00'),
+    bytearray(b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00'),
+    bytearray(b'\xe0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xbf\xf0'),
+    bytearray(b'\xff\xf0\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00'),
 ]
+
+STATUS_IMG_LOCK = bytearray(b'\x06\x00\x19\x80\x19\x80`@`@`@\xff\xf0\xf9\xf0\xf9\xf0\xfd\xf0\xff\xf0\xff\xf0')
+STATUS_IMG_PLAY = bytearray(b'\x00\x00\x18\x00\x18\x00\x1c\x00\x1c\x00\x1e\x00\x1f\x80\x1e\x00\x1e\x00\x1c\x00\x18\x00\x18\x00')
+STATUS_IMG_PAUSE = bytearray(b'\x00\x00y\xc0y\xc0y\xc0y\xc0y\xc0y\xc0y\xc0y\xc0y\xc0y\xc0y\xc0')
+
+STATUS_IMG_WIDTH = 12
+STATUS_IMG_HEIGHT = 12
 
 ## Duration before we activate the screensaver
 SCREENSAVER_TIMEOUT_MS = 1000 * 60 * 5
@@ -253,7 +260,35 @@ class Semaphore:
         """
         self.value = self.value + 1
 
-class MasterClock:
+class CvControllable:
+    def __init__(self):
+        self.cv_controlled_key = None
+
+    def __getitem__(self, key):
+        raise ValueError("Not implemented")
+
+    def __setitem__(self, key, value):
+        raise ValueError("Not Implemented")
+        
+    def set_cv_control(self, key, cv_control=True):
+        """Mark an attribute of this object as being under external CV control
+
+        @param key  The key for __getitem__ and __setitem__ that is being controlled
+        @param cv_control  Is this attribute being controlled, or are we ceding control?
+        """
+        if cv_control:
+            self.cv_controlled_key = key
+        else:
+            self.cv_controlled_key = None
+
+    def get_cv_control(self, key):
+        """Query whether or not the given key is CV controlled
+
+        @param key  The key for __getitem__ and __setitem__ that we're querying
+        """
+        return self.cv_controlled_key == key
+
+class MasterClock(CvControllable):
     """The main clock that ticks and runs the outputs
     """
 
@@ -277,6 +312,8 @@ class MasterClock:
         """Create the main clock to run at a given bpm
         @param bpm  The initial BPM to run the clock at
         """
+        CvControllable.__init__(self)
+
         self.channels = []
         self.is_running = False
         self.bpm = bpm
@@ -413,7 +450,7 @@ class MasterClock:
         self.bpm = new_bpm
         self.recalculate_ticks()
 
-class PamsOutput:
+class PamsOutput(CvControllable):
     """Controls a single output jack
     """
 
@@ -434,6 +471,8 @@ class PamsOutput:
         @param cv_out  One of the six output jacks
         @param clock  The MasterClock that controls the timing of this output
         """
+        CvControllable.__init__(self)
+
         self.cv_out = cv_out
         self.clock = clock
 
@@ -777,7 +816,7 @@ class PamsOutput:
     def get_e_trigs_options(self):
         return list(range(self.e_step+1))
 
-class CVController:
+class CVController(CvControllable):
     """Allows the signal from AIN to be routed to another object to control its properties
     """
 
@@ -793,6 +832,8 @@ class CVController:
     ]
 
     def __init__(self, cv_in, application):
+        CvControllable.__init__(self)
+
         ## Thread safety control to make sure we aren't CV-controlling an attribute _while_ updating whate attribute
         #  we want to control
         self.prev_state_lock = Semaphore(1)
@@ -934,6 +975,10 @@ class CVController:
         if "prev_value" in settings:
             self.prev_dest_value = settings["prev_value"]
 
+        if self.dest_obj:
+            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
+            self.dest_obj.set_cv_control(low_level_key, True)
+
     def restore_previous(self):
         """Restore the pre-CV-controlled state of whatever object we're controlling
         """
@@ -942,6 +987,7 @@ class CVController:
             print(f"[INFO] Restoring {self.dest_obj_txt}[{self.dest_key}] to {self.prev_dest_value}")
             low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
             dest_obj[low_level_key] = self.prev_dest_value
+            dest_obj.set_cv_control(low_level_key, False)
 
     def read_object_property(self, obj_key, prop_key):
         """Read the raw property from the destination object
@@ -972,6 +1018,11 @@ class CVController:
         self.dest_key = key
         self.prev_dest_key = key
         self.prev_dest_value = self.read_object_property(self.prev_dest_obj_txt, self.prev_dest_key)
+
+        if self.dest_obj:
+            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
+            self.dest_obj.set_cv_control(low_level_key, True)
+
         self.prev_state_lock.release()
 
     def change_target_object(self, key):
@@ -997,6 +1048,10 @@ class CVController:
         self.prev_dest_obj_txt = self.dest_obj_txt
         self.prev_dest_key = self.dest_obj_txt
         self.prev_dest_value = self.read_object_property(self.prev_dest_obj_txt, self.prev_dest_key)
+
+        if self.dest_obj:
+            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
+            self.dest_obj.set_cv_control(low_level_key, True)
 
         self.prev_state_lock.release()
 
@@ -1102,31 +1157,36 @@ class SettingChooser:
         @param can_edit  If True, we can write a new value
         """
 
-        self.is_writable = can_edit
+        if not self.dest_obj.get_cv_control(self.dest_prop):
+            self.is_writable = can_edit
+        else:
+            self.is_writable = False
 
     def is_editable(self):
         return self.is_writable
 
     def draw(self):
         """Draw the menu to the screen
+
+        The OLED must be cleared before calling this function. You must call oled.show() after
+        calling this function
         """
 
         text_left = 0
 
-        oled.fill(0)
         oled.text(f"{self.title}", 0, 0)
 
         if self.option_gfx is not None:
             # draw the option thumbnail to the screen
             text_left = 14
             if self.is_writable:
-                img = bytearray(k2.choice(self.option_gfx))
+                img = k2.choice(self.option_gfx)
             else:
                 key = self.dest_obj[self.dest_prop]
                 index = self.options.index(key)
-                img = bytearray(self.option_gfx[index])
+                img = self.option_gfx[index]
             imgFB = FrameBuffer(img, 12, 12, MONO_HLSB)
-            oled.blit(imgFB,0,SELECT_OPTION_Y)
+            oled.blit(imgFB, 0, SELECT_OPTION_Y)
 
 
         if self.is_writable:
@@ -1145,7 +1205,9 @@ class SettingChooser:
             choice_text = f"{self.dest_obj[self.dest_prop]}"
             oled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 1)
 
-        oled.show()
+        if self.dest_obj.get_cv_control(self.dest_prop):
+            imgFB = FrameBuffer(STATUS_IMG_LOCK, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
+            oled.blit(imgFB, OLED_WIDTH - 2*STATUS_IMG_WIDTH, 0)
 
     def on_click(self):
         if self.is_writable:
@@ -1373,7 +1435,17 @@ class PamsWorkout(EuroPiScript):
             elif time.ticks_diff(now, self.last_interaction_time) > SCREENSAVER_TIMEOUT_MS:
                 self.screensaver.draw()
             else:
+                oled.fill(0)
                 self.main_menu.draw()
+
+                # draw a simple header to indicate status
+                if self.clock.is_running:
+                    imgFB = FrameBuffer(STATUS_IMG_PLAY, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
+                else:
+                    imgFB = FrameBuffer(STATUS_IMG_PAUSE, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
+                oled.blit(imgFB, OLED_WIDTH - STATUS_IMG_WIDTH, 0)
+
+                oled.show()
 
 if __name__=="__main__":
     PamsWorkout().main()
