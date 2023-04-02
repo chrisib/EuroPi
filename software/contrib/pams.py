@@ -4,34 +4,7 @@
 @author Chris Iverach-Brereton <ve4cib@gmail.com>
 @year   2023
 
-The module has a master clock rate, with each channel outputting
-a multiple/division of that rate.
-
-Each channel supports the following options:
-- clock multiplier/divider
-- wave shape
-    - square (default)
-    - sine
-    - triangle
-    - random
-    - start (trigger on clock start)
-    - reset (trigger on clock stop)
-- amplitude %: height of the wave as a percentage of the maximum output voltage
-- width %: how wide is the wave
-    - PWM for square waves: 0% is always off, 100% is always on
-    - symmetry for triangle waves:
-        - 0  : |\
-        - 50 : /\
-        - 100: /|
-    - offset for random waves:
-        - output = rnd(0, 1) * MAX_VOLTS * amplitude% + MAX_VOLTS * width%
-    - ignored for sine waves
-- skip %: probability that any given trigger may skip (doesn't apply to sine/saw/ramp/triangle waves)
-- euclidean rhythms
-    - estep: # of steps
-    - etrig: # of triggers
-    - erot: pattern rotation
-- output can be quantized to pre-generated scales
+See pams.md for complete feature list
 """
 
 from europi import *
@@ -280,9 +253,9 @@ class Setting:
 
         self.allow_cv_in = allow_cv_in
         if allow_cv_in:
-            for cv in cv_ins.keys():
+            for cv in CV_INS.keys():
                 self.display_options.append(cv)
-                self.options.append(cv_ins[cv])
+                self.options.append(CV_INS[cv])
 
         self.value_dict = value_dict
         if default_value is not None:
@@ -314,17 +287,17 @@ class Setting:
             self.options.append(o)
             
         if self.allow_cv_in:
-            for cv in cv_ins.keys():
+            for cv in CV_INS.keys():
                 self.display_options.append(cv)
-                self.options.append(cv_ins[cv])
+                self.options.append(CV_INS[cv])
 
     def get_value(self):
         if type(self.options[self.choice]) is AnalogInReader:
-            n = round(self.options[self.choice].get_value() / MAX_INPUT_VOLTAGE * len(self.options) - len(cv_ins)) # remo
+            n = round(self.options[self.choice].get_value() / MAX_INPUT_VOLTAGE * len(self.options) - len(CV_INS)) # remo
             if n < 0:
                 n = 0
-            elif n >= len(self.options) - len(cv_ins):
-                n = len(self.options) - len(cv_ins) - 1
+            elif n >= len(self.options) - len(CV_INS):
+                n = len(self.options) - len(CV_INS) - 1
             key = n
         else:
             key = self.choice
@@ -370,7 +343,7 @@ class AnalogInReader:
         return self.last_voltage
 
 ## Wrapped copies of all CV inputs so we can iterate through them
-cv_ins = {    
+CV_INS = {    
     "AIN": AnalogInReader(ain)
 }
 
@@ -889,8 +862,8 @@ class PamsMenu:
                 SettingChooser(prefix, ch.e_rot),
                 SettingChooser(prefix, ch.quantizer)
             ]))
-        for ch in cv_ins.keys():
-            self.items.append(SettingChooser(f"{ch} | ", cv_ins[ch].gain, None, []))
+        for ch in CV_INS.keys():
+            self.items.append(SettingChooser(f"{ch} | ", CV_INS[ch].gain, None, []))
 
         self.active_items = self.items
 
@@ -1027,9 +1000,9 @@ class PamsWorkout(EuroPiScript):
                 self.din_mode.load(din_cfg)
 
             ain_cfg = state.get("ain", [])
-            cv_keys = list(cv_ins.keys())
+            cv_keys = list(CV_INS.keys())
             for i in range(len(ain_cfg)):
-                cv_ins[cv_keys[i]].load_settings(ain_cfg[i])
+                CV_INS[cv_keys[i]].load_settings(ain_cfg[i])
 
         except:
             print("[ERR ] Error loading saved configuration for PamsWorkout")
@@ -1046,8 +1019,8 @@ class PamsWorkout(EuroPiScript):
         }
         for i in range(len(self.channels)):
             state["channels"].append(self.channels[i].to_dict())
-        for cv in cv_ins.keys():
-            state["ain"].append(cv_ins[cv].to_dict())
+        for cv in CV_INS.keys():
+            state["ain"].append(CV_INS[cv].to_dict())
 
         self.save_state_json(state)
 
@@ -1061,7 +1034,7 @@ class PamsWorkout(EuroPiScript):
         while True:
             now = time.ticks_ms()
 
-            for cv in cv_ins.values():
+            for cv in CV_INS.values():
                 cv.update()
 
             if time.ticks_diff(now, self.last_interaction_time) > BLANK_TIMEOUT_MS:
