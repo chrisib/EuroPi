@@ -990,7 +990,7 @@ class CVController:
 
         # Make sure the dest key is in the valid options for the dest object
         if not (self.dest_key in self.dest_keys[self.dest_obj_txt]):
-            print(f"[WARN] {self.dest_key} isn't in the current object. Resetting dest property to the default for this output")
+            print(f"[WARN] {self.dest_key} isn't in {self.dest_obj_txt}. Resetting dest property to the default for this output")
             self.dest_key = self.dest_keys[self.dest_obj_txt][0]
 
         # read the current state of the object so we can restore it later
