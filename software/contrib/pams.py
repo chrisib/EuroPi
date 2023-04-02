@@ -474,7 +474,7 @@ class MasterClock:
 
         if self.is_running:
             self.timer.deinit()
-            self.timer.init(period=round(self.ms_per_tick), mode=Timer.PERIODIC, callback=self.on_tick)
+            self.timer.init(period=max(1, round(self.ms_per_tick)), mode=Timer.PERIODIC, callback=self.on_tick)
 
 class PamsOutput:
     """Controls a single output jack
