@@ -793,6 +793,10 @@ class CVController:
     ]
 
     def __init__(self, cv_in, application):
+        ## Thread safety control to make sure we aren't CV-controlling an attribute _while_ updating whate attribute
+        #  we want to control
+        self.prev_state_lock = Semaphore(1)
+
         self.app = application
         self.cv_in = cv_in
         self.dest_obj = None
@@ -935,8 +939,66 @@ class CVController:
         """
         dest_obj = self.dest_objects[self.prev_dest_obj_txt]
         if dest_obj:
+            print(f"[INFO] Restoring {self.dest_obj_txt}[{self.dest_key}] to {self.prev_dest_value}")
             low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
             dest_obj[low_level_key] = self.prev_dest_value
+
+    def read_object_property(self, obj_key, prop_key):
+        """Read the raw property from the destination object
+
+        @param obj_key  The dest_obj key from dest_objects
+        @param prop_key  The dest_key key from dest_keys[obj_key]
+
+        @return the raw value for the given property, or None if there was an invalid key
+        """
+        dest_obj = self.dest_objects[self.prev_dest_obj_txt]
+        if dest_obj:
+            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
+            return dest_obj[low_level_key]
+        return None
+
+    def change_target_property(self, key):
+        """Change what attribute of the target object we're manipulating
+
+        @param key  The dest_key from dest_keys[self.dest_obj_txt]
+        """
+        self.prev_state_lock.lock()
+
+        # before we change anything, restore the previous state to the object
+        # this was saved before we took control of it via CV
+        self.restore_previous()
+
+        # read the current state of the new property and save it so we can restore later
+        self.dest_key = key
+        self.prev_dest_key = key
+        self.prev_dest_value = self.read_object_property(self.prev_dest_obj_txt, self.prev_dest_key)
+        self.prev_state_lock.release()
+
+    def change_target_object(self, key):
+        """Change the target object we're manupulating
+
+        @param key  The dest_obj key from dest_objects
+        """
+        self.prev_state_lock.lock()
+
+        # before we change anything, restore the previous state to the object
+        # this was saved before we took control of it via CV
+        self.restore_previous()
+
+        self.dest_obj_txt = key
+        self.dest_obj = self.dest_objects[key]
+
+        # Make sure the dest key is in the valid options for the dest object
+        if not (self.dest_key in self.dest_keys[self.dest_obj_txt]):
+            print(f"[WARN] {self.dest_key} isn't in the current object. Resetting dest property to the default for this output")
+            self.dest_key = self.dest_keys[self.dest_obj_txt][0]
+
+        # read the current state of the object so we can restore it later
+        self.prev_dest_obj_txt = self.dest_obj_txt
+        self.prev_dest_key = self.dest_obj_txt
+        self.prev_dest_value = self.read_object_property(self.prev_dest_obj_txt, self.prev_dest_key)
+
+        self.prev_state_lock.release()
 
     def __getitem__(self, key):
         if key == "dest_obj_txt":
@@ -954,24 +1016,9 @@ class CVController:
             return
 
         if key == "dest_obj_txt":
-            self.restore_previous()
-
-            self.dest_obj_txt = value
-            self.dest_obj = self.dest_objects[value]
-
-            # Make sure the dest key is in the valid options for the dest object
-            if not (self.dest_key in self.dest_keys[self.dest_obj_txt]):
-                self.dest_key = self.dest_keys[self.dest_obj_txt][0]
-
-            # save the current state of the destination object
-            self.prev_dest_obj_txt = value
-            self.prev_dest_key = self.dest_key
-            low_level_key = self.low_level_keys[self.dest_obj_txt][self.dest_key]
-            self.prev_dest_value = self.dest_objects[self.prev_dest_obj_txt][low_level_key]
+            self.change_target_object(value)
         elif key == "dest_key":
-            self.restore_previous()
-
-            self.dest_key = value
+            self.change_target_property(value)
         elif key == "gain":
             self.gain = value
         else:
@@ -980,6 +1027,7 @@ class CVController:
     def read_and_apply(self):
         """Read the analogue input and apply it to the destination object
         """
+        self.prev_state_lock.lock()
         try:
             if self.dest_obj:
                 options = self.__get_applicable_options()
@@ -994,6 +1042,7 @@ class CVController:
             # we can get thread-unsafe and have a bad key
             # Just suppress the error and carry on
             pass
+        self.prev_state_lock.release()
 
 class SettingChooser:
     """Menu UI element for displaying an option and the choices associated with it
