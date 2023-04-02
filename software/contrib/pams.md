@@ -185,3 +185,36 @@ The following scales are available:
 - `Whole` -- whole tone scale (C D E F# G# A#)
 - `Penta` -- pentatonic scale (C D E G A)
 - `Dom 7` -- dominant 7th chord (C E G Bb)
+
+
+## Known Bugs
+
+The `machine.Timer` class used to contol the inner clock has 1ms accuracy. Because of this the
+actual BPM may not exactly match the user settings.
+
+The math for calculating the timer interval is:
+
+```python
+PPQN = 48  # 48 pulses per quarter note; must be divisible by 16 and 3
+BPM = ...  # some user-configured BPM
+ms_per_tick = round(1.0 / BPM * 60.0 * 1000.0 / PPQN)  # round to nearest whole ms
+
+timer.interval = ms_per_tick
+```
+
+At different BPMs the difference between the canonical `ms_per_tick` and its rounded version
+varies:
+
+| BPM | ms error per tick | ms error per quarter note |
+|-----|-------------------|---------------------------|
+|  30 | -0.333            | -16.0                     |
+|  60 | -0.167            | -8.00                     |
+|  90 | -0.111            | -5.33                     |
+| 100 | +0.500            | +24.0                     |
+| 120 | +0.417            | +20.0                     |
+| 200 | +0.250            | +12.0                     |
+
+This is largely a hardware limitation of the device and the uPython Timer class.  When
+Pam's "EuroPi" Workout is used as the primary clock source for a whole system the variation
+in BPM should be unnoticeable. You may encounter issues if you have multiple clocks running
+concurrently.
