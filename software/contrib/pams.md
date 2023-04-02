@@ -205,14 +205,14 @@ timer.interval = ms_per_tick
 At different BPMs the difference between the canonical `ms_per_tick` and its rounded version
 varies:
 
-| BPM | ms error per tick | ms error per quarter note |
-|-----|-------------------|---------------------------|
-|  30 | -0.333            | -16.0                     |
-|  60 | -0.167            | -8.00                     |
-|  90 | -0.111            | -5.33                     |
-| 100 | +0.500            | +24.0                     |
-| 120 | +0.417            | +20.0                     |
-| 200 | +0.250            | +12.0                     |
+| BPM | ms error per tick | ms error per quarter note | Actual output BPM |
+|-----|-------------------|---------------------------|-------------------|
+|  30 | -0.333            | -16.0                     | 29.76             |
+|  60 | -0.167            | -8.00                     | 59.52             |
+|  90 | -0.111            | -5.33                     | 89.29             |
+| 100 | +0.500            | +24.0                     | 104.17            |
+| 120 | +0.417            | +20.0                     | 125.0             |
+| 200 | +0.250            | +12.0                     | 208.3             |
 
 This is largely a hardware limitation of the device and the uPython Timer class.  When
 Pam's "EuroPi" Workout is used as the primary clock source for a whole system the variation
