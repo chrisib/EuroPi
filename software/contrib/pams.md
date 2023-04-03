@@ -6,7 +6,7 @@ main clock generator, euclidean rhythm generator, clocked LFO, clocked
 random voltage source, etc... with optional quantization.
 
 The module itself will generate the master clock signal with a configurable
-BPM (1-150 BPM supported). Each output has an independently controlled
+BPM (1-300 BPM supported). Each output has an independently controlled
 clock multiplier or divider, chosen from the following:
 
 ```
@@ -67,7 +67,7 @@ Items marked with a `*` character have the option to be CV-controlled via `ain`
 
 The main clock menu has the following options:
 
-- `BPM` -- the main BPM for the clock. Must be in the range `[1, 150]`.
+- `BPM` -- the main BPM for the clock. Must be in the range `[1, 300]`.
 
 The submenu for the main clock has the following options:
 
@@ -190,3 +190,35 @@ range of options available.
 The `Precision` menu option allows control over the number of samples taken when reading
 the input.  Higher precision can result in slower processing, which may introduce errors
 when running at high clock speeds
+
+## Known Bugs
+
+The `machine.Timer` class used to contol the inner clock has 1ms accuracy. Because of this the
+actual BPM may not exactly match the user settings.
+
+The math for calculating the timer interval is:
+
+```python
+PPQN = 48  # 48 pulses per quarter note; must be divisible by 16 and 3
+BPM = ...  # some user-configured BPM
+ms_per_tick = round(1.0 / BPM * 60.0 * 1000.0 / PPQN)  # round to nearest whole ms
+
+timer.interval = ms_per_tick
+```
+
+At different BPMs the difference between the canonical `ms_per_tick` and its rounded version
+varies:
+
+| BPM | ms error per tick | ms error per quarter note | Actual output BPM |
+|-----|-------------------|---------------------------|-------------------|
+|  30 | -0.333            | -16.0                     | 29.76             |
+|  60 | -0.167            | -8.00                     | 59.52             |
+|  90 | -0.111            | -5.33                     | 89.29             |
+| 100 | +0.500            | +24.0                     | 104.17            |
+| 120 | +0.417            | +20.0                     | 125.0             |
+| 200 | +0.250            | +12.0                     | 208.3             |
+
+This is largely a hardware limitation of the device and the uPython Timer class.  When
+Pam's "EuroPi" Workout is used as the primary clock source for a whole system the variation
+in BPM should be unnoticeable. You may encounter issues if you have multiple clocks running
+concurrently.
