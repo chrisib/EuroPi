@@ -365,7 +365,7 @@ class MasterClock:
     MIN_BPM = 1
 
     ## The absolute fastest the clock can go
-    MAX_BPM = 300
+    MAX_BPM = 150
 
     def __init__(self, bpm):
         """Create the main clock to run at a given bpm
@@ -375,11 +375,16 @@ class MasterClock:
         self.channels = []
         self.is_running = False
 
-        self.bpm = Setting("BPM", "bpm", list(range(self.MIN_BPM, self.MAX_BPM+1)), list(range(self.MIN_BPM, self.MAX_BPM+1)), on_change_fn=self.recalculate_ticks, default_value=60)
+        self.bpm = Setting("BPM", "bpm", list(range(self.MIN_BPM, self.MAX_BPM+1)), list(range(self.MIN_BPM, self.MAX_BPM+1)), on_change_fn=self.recalculate_timer_freq, default_value=60)
         self.reset_on_start = Setting("Reset", "reset_on_start", ["On", "Off"], [True, False], False)
 
+        ## The frequency the timer actually runs at
+        #
+        #  Calculated by recalculate_timer_freq()
+        self.tick_hz = 1.0
+
         self.timer = Timer()
-        self.recalculate_ticks()
+        self.recalculate_timer_freq()
 
         self.elapsed_pulses = 0
         self.start_time = 0
@@ -411,7 +416,7 @@ class MasterClock:
         if "reset_on_start" in settings.keys():
             self.reset_on_start.load(settings["reset_on_start"])
 
-        self.recalculate_ticks()
+        self.recalculate_timer_freq()
 
     def on_tick(self, timer):
         """Callback function for the timer's tick
@@ -433,7 +438,7 @@ class MasterClock:
                 for ch in self.channels:
                     ch.reset()
 
-            self.timer.init(period=round(self.ms_per_tick), mode=Timer.PERIODIC, callback=self.on_tick)
+            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
     def stop(self):
         """Stop the timer
@@ -464,17 +469,16 @@ class MasterClock:
         else:
             return 0
 
-    def recalculate_ticks(self):
-        """Recalculate the number of ms per tick
+    def recalculate_timer_freq(self):
+        """Recalculate the inner timer frequency
+
         If the timer is currently running deinitialize it and reset it to use the correct BPM
         """
-        min_per_beat = 1.0 / self.bpm.get_value()
-        self.ms_per_beat = min_per_beat * 60.0 * 1000.0
-        self.ms_per_tick = self.ms_per_beat / self.PPQN
+        self.tick_hz = self.bpm / 60 * self.PPQN
 
         if self.is_running:
             self.timer.deinit()
-            self.timer.init(period=max(1, round(self.ms_per_tick)), mode=Timer.PERIODIC, callback=self.on_tick)
+            self.timer.init(freq=sel.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
 class PamsOutput:
     """Controls a single output jack
