@@ -325,18 +325,22 @@ class AnalogInReader:
         self.last_voltage = 0.0
         
         self.gain = Setting("Gain", "gain", list(range(301)), list(range(301)), allow_cv_in=False, default_value=100)
+        self.precision = Setting("Precision", "precision", ["Low", "Med", "High"], [int(DEFAULT_SAMPLES/2), DEFAULT_SAMPLES, int(DEFAULT_SAMPLES*2)], allow_cv_in=False, default_value=DEFAULT_SAMPLES)
 
     def to_dict(self):
         return {
-            "gain": self.gain.to_dict()
+            "gain": self.gain.to_dict(),
+            "precision": self.precision.to_dict()
         }
     
     def load_settings(self, settings):
         if "gain" in settings.keys():
             self.gain.load(settings["gain"])
+        if "precision" in settings.keys():
+            self.precision.load(settings["precision"])
 
     def update(self):
-        self.last_voltage = self.cv_in.read_voltage() * self.gain.get_value() / 100.0
+        self.last_voltage = self.cv_in.read_voltage(self.precision.get_value()) * self.gain.get_value() / 100.0
         return self.last_voltage
 
     def get_value(self):
@@ -867,7 +871,9 @@ class PamsMenu:
                 SettingChooser(prefix, ch.quantizer)
             ]))
         for ch in CV_INS.keys():
-            self.items.append(SettingChooser(f"{ch} | ", CV_INS[ch].gain, None, []))
+            self.items.append(SettingChooser(f"{ch} | ", CV_INS[ch].gain, None, [
+                SettingChooser(f"{ch} | Precision", CV_INS[ch].precision)
+            ]))
 
         self.active_items = self.items
 

@@ -25,19 +25,6 @@ clock multiplier or divider, chosen from the following:
 | `k2`          | Scroll through allowed values for the current menu item           |
 | `cv1` - `cv6` | Output signals. Configuration is explained below                  |
 
-## External CV Routing
-
-The input signal to `ain` can be configured to control many parameters of the system.
-A value of 0V is the equivalent of choosing the first item from the available menu
-and 12V is the equivalent of choosing the last item in the menu.
-
-There is digital attenuation/gain via the `AIN > Gain` menu option.  This sets the percentage
-of the input signal that is passed to settings listenting to `ain`.
-
-For example, if your modulation source can only output up to 5V you should set the gain to
-`12.0 / 5.0 * 100.0 = 240%`.  This will allow the modulation source to fully sweep the
-range of options available.
-
 ## Menu Navigation
 
 Rotate `k1` to scroll through the current menu. Pressing and holding `b2` for 0.5s will
@@ -71,6 +58,7 @@ CV2 to 6
  |
 AIN
  +-- Gain
+ |    |-- Precision
 ```
 
 Items marked with a `*` character have the option to be CV-controlled via `ain`
@@ -185,3 +173,20 @@ The following scales are available:
 - `Whole` -- whole tone scale (C D E F# G# A#)
 - `Penta` -- pentatonic scale (C D E G A)
 - `Dom 7` -- dominant 7th chord (C E G Bb)
+
+## External CV Routing
+
+The input signal to `ain` can be configured to control many parameters of the system.
+A value of 0V is the equivalent of choosing the first item from the available menu
+and 12V is the equivalent of choosing the last item in the menu.
+
+There is digital attenuation/gain via the `AIN > Gain` menu option.  This sets the percentage
+of the input signal that is passed to settings listenting to `ain`.
+
+For example, if your modulation source can only output up to 5V you should set the gain to
+`12.0 / 5.0 * 100.0 = 240%`.  This will allow the modulation source to fully sweep the
+range of options available.
+
+The `Precision` menu option allows control over the number of samples taken when reading
+the input.  Higher precision can result in slower processing, which may introduce errors
+when running at high clock speeds
