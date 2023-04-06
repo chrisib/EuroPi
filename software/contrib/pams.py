@@ -148,6 +148,12 @@ WAVE_START = 5
 #  off when the clock stops
 WAVE_RUN = 6
 
+## Use raw AIN as the direct input
+#
+#  This lets you effectively use Pam's as a quantizer for
+#  the AIN signal
+WAVE_AIN = 7
+
 ## Available wave shapes
 WAVE_SHAPES = [
     WAVE_SQUARE,
@@ -156,7 +162,8 @@ WAVE_SHAPES = [
     WAVE_RANDOM,
     WAVE_RESET,
     WAVE_START,
-    WAVE_RUN
+    WAVE_RUN,
+    WAVE_AIN
 ]
 
 ## Ordered list of labels for the wave shape chooser menu
@@ -167,7 +174,8 @@ WAVE_SHAPE_LABELS = [
     "Random",
     "Reset",
     "Start",
-    "Run"
+    "Run",
+    "AIN"
 ]
 
 ## Sorted list of wave shapes to display
@@ -185,7 +193,7 @@ WAVE_SHAPE_IMGS = [
     bytearray(b'\x03\xf0\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\x02\x00\xfe\x00'),
     bytearray(b'\xe0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xa0\x00\xbf\xf0'),
     bytearray(b'\xff\xf0\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00'),
-    bytearray(b'\x06\x00\x19\x80\x19\x80`@`@`@\xff\xf0\xf9\xf0\xf9\xf0\xfd\xf0\xff\xf0\xff\xf0')
+    bytearray(b'\x00\x00|\x00|\x00d\x00d\x00g\x80a\x80\xe1\xb0\xe1\xb0\x01\xf0\x00\x00\x00\x00')
 ]
 
 STATUS_IMG_LOCK = bytearray(b'\x06\x00\x19\x80\x19\x80`@`@`@\xff\xf0\xf9\xf0\xf9\xf0\xfd\xf0\xff\xf0\xff\xf0')
@@ -476,8 +484,6 @@ class MasterClock:
         If the timer is currently running deinitialize it and reset it to use the correct BPM
         """
         self.tick_hz = self.bpm.get_value() / 60.0 * self.PPQN
-        
-        print(f"{self.bpm.get_value()}BPM -> {self.tick_hz}Hz (PPQN)")
 
         if self.is_running:
             self.timer.deinit()
@@ -523,7 +529,7 @@ class PamsOutput:
         ## What shape of wave are we generating?
         #
         #  For now, stick to square waves for triggers & gates
-        self.wave_shape = Setting("Wave", "wave", WAVE_SHAPE_LABELS, WAVE_SHAPES, default_value=WAVE_SQUARE)
+        self.wave_shape = Setting("Wave", "wave", WAVE_SHAPE_LABELS, WAVE_SHAPES, default_value=WAVE_SQUARE, allow_cv_in=False)
 
         ## The amplitude of the output as a [0, 100] percentage
         self.amplitude = Setting("Ampl.", "ampl", list(range(101)), list(range(101)), default_value=50)
@@ -726,6 +732,11 @@ class PamsOutput:
             if self.wave_shape.get_value() == WAVE_RANDOM:
                 if rising_edge and not self.skip_this_step:
                     wave_sample = random.random() * (self.amplitude.get_value() / 100.0) + (self.width.get_value() / 100.0)
+                else:
+                    wave_sample = self.previous_wave_sample
+            elif self.wave_shape.get_value() == WAVE_AIN:
+                if rising_edge and not self.skip_this_step:
+                    wave_sample = CV_INS["AIN"].get_value() * (self.amplitude.get_value() / 100.0) + (self.width.get_value() / 100.0)
                 else:
                     wave_sample = self.previous_wave_sample
             elif self.wave_shape.get_value() == WAVE_SQUARE:

@@ -21,8 +21,8 @@ clock multiplier or divider, chosen from the following:
 | `ain`         | Routable CV input to control other parameters                     |
 | `b1`          | Start/Stop input                                                  |
 | `b2`          | Press to enter/exit edit mode. Long-press to enter/leave sub-menu |
-| `k1`          | Scroll through the current menu                                   |
-| `k2`          | Scroll through allowed values for the current menu item           |
+| `k1`          | Scroll through the settings in the current menu                   |
+| `k2`          | Scroll through allowed values for the current setting             |
 | `cv1` - `cv6` | Output signals. Configuration is explained below                  |
 
 ## Menu Navigation
@@ -30,7 +30,7 @@ clock multiplier or divider, chosen from the following:
 Rotate `k1` to scroll through the current menu. Pressing and holding `b2` for 0.5s will
 enter a sub-menu. Pressing and holding `b2` again will return to the parent menu.
 
-On any given menu item, pressing `b2` (without holding) will enter edit mode for that
+On any given setting, pressing `b2` (without holding) will enter edit mode for that
 item. Rotate `k2` to choose the desired value for the item, and press `b2` again
 to apply it.
 
@@ -44,7 +44,7 @@ Clock
  |
 CV1
  +-- Mod.*
- |    +-- Wave Shape*
+ |    +-- Wave Shape**
  |    +-- Wave Width (PWM/Symmetry)*
  |    +-- Wave Amplitude*
  |    +-- Skip Probability*
@@ -58,10 +58,12 @@ CV2 to 6
  |
 AIN
  +-- Gain
- |    |-- Precision
+ |    +-- Precision
 ```
 
-Items marked with a `*` character have the option to be CV-controlled via `ain`
+`*` These settings can be automatically selected using voltage coming into `ain`.
+
+`**` This setting can be set up to work as a sample & hold for the signal coming into `ain`.
 
 ## Main Clock Options
 
@@ -93,11 +95,14 @@ The submenu for each CV output has the following options:
   - ![Square Wave](./pams-docs/wave_square.png) Square: square/pulse wave with adjustable width
   - ![Triangle Wave](./pams-docs/wave_triangle.png) Triangle: triangle wave with adjustable symmetry (saw to symmetrical triangle to ramp)
   - ![Sine Wave](./pams-docs/wave_sine.png) Sine: bog-standard sine wave
-  - ![Random Wave](./pams-docs/wave_random.png) Random: outputs a random voltage at every tick, holding that voltage until the next tick
+  - ![Random Wave](./pams-docs/wave_random.png) Random: outputs a random voltage at the start of every euclidean pulse, holding that voltage until the next pulse
+    (if `EStep` is zero then every clock tick is assumed to be a euclidean pulse)
   - ![Reset Wave](./pams-docs/wave_reset.png) Reset: a trigger that fires when the clock stops (can be used to trigger other modules to reset, e.g. sequencers
     sequential switches, other euclidean generators)
   - ![Start Wave](./pams-docs/wave_start.png) Start: a trigger that fires when the clock starts (can be used to trigger other modules)
   - ![Run Wave](./pams-docs/wave_run.png) Run: a gate that is high when the clock is running and low when the clock is stopped
+  - ![AIN](./pams-docs/wave_ain.png) AIN: acts as a sample & hold of `ain`, with a sample taken at the start of every euclidean pulse
+    (if `EStep` is zero then every clock tick is assumed to be a euclidean pulse)
 - `Width` -- width of the resulting wave. See below for the effects of width adjustment on different wave shapes
 - `Ampl.` -- the maximum amplitude of the output as a percentage of the 12V hardware maximum
 - `Skip%` -- the probability that a square pulse or euclidean trigger will be skipped
@@ -116,6 +121,7 @@ The submenu for each CV output has the following options:
 - Reset: ignored
 - Start: ignored
 - Run: ignored
+- AIN: offset voltage as a percentage of the maximum output
 
 ### Reset and Run Waves
 
@@ -180,13 +186,19 @@ The input signal to `ain` can be configured to control many parameters of the sy
 A value of 0V is the equivalent of choosing the first item from the available menu
 and 12V is the equivalent of choosing the last item in the menu.
 
-There is digital attenuation/gain via the `AIN > Gain` menu option.  This sets the percentage
+NOTE: the `Wave Shape` parameter of the CV outputs works differently. Instead of dynamically
+choosing the output wave shape, the CV output acts as a sample & hold of the signal coming into
+`ain. The digital attenuation (see below) is applied BEFORE the sample & hold operation is applied.
+The `Amplitude` parameter acts as a secondary virtual attenuator, and the `Width` parameter acts
+as an offset voltage.
+
+There is digital attenuation/gain via the `AIN > Gain` setting.  This sets the percentage
 of the input signal that is passed to settings listenting to `ain`.
 
 For example, if your modulation source can only output up to 5V you should set the gain to
 `12.0 / 5.0 * 100.0 = 240%`.  This will allow the modulation source to fully sweep the
 range of options available.
 
-The `Precision` menu option allows control over the number of samples taken when reading
+The `AIN > Precision` setting allows control over the number of samples taken when reading
 the input.  Higher precision can result in slower processing, which may introduce errors
 when running at high clock speeds
