@@ -287,6 +287,9 @@ class Setting:
         }
     
     def update_options(self, display_options, options):
+        if self.choice >= len(options):
+            self.choice = len(options)-1
+
         self.display_options = []
         for o in display_options:
             self.display_options.append(o)
