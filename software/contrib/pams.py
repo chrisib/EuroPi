@@ -20,7 +20,18 @@ import math
 import time
 import random
 
+## The version of Pam's Workout
+#
+#  Ideally this should sync 1:1 with a tag in the development branch
+#
+#  This is shown on a splash screen when the script starts to help with
+#  debugging/bug-reports
+VERSION = "0.0.1"
+
+## Vertical screen offset for placing user input
 SELECT_OPTION_Y = 16
+
+## Exactly what it says on the tin; half the width of a character on the screen
 HALF_CHAR_WIDTH = int(CHAR_WIDTH / 2)
 
 ## How many ms does a button need to be held to qualify as a long press?
@@ -912,6 +923,35 @@ class PamsMenu:
 
         self.visible_item.draw()
 
+class SplashScreen:
+    """A splash screen we show during startup to indicate the version of this script
+    """
+    def draw(self):
+        """Draw the splash screen to the OLED
+
+        Layout looks like this, where % indicates the EuroPi logo:
+        ```
+        +-------------------+
+        | %%% Pam's Workout |
+        | %%% vA.B.C        |
+        +-------------------+
+        ```
+        """
+        logo = bytearray(b"\x00\x01\xf0\x00\x00\x02\x08\x00\x00\x04\x04\x00\x03\xc4\x04\x00\x0c$\x02\x00\x10\x14\x01\x00\x10\x0b\xc0\x80 \x04\x00\x80A\x8a|\x80FJC\xc0H\x898\x00S\x08\x87\x00d\x08\x00\xc0X\x08p #\x88H L\xb8& \x91P\x11 \xa6\x91\x08\xa0\xc9\x12\x84`\x12\x12C\x00$\x11 \x80H\x0c\x90\x80@\x12\x88\x80 \x12F\x80\x10\x10A\x00\x10  \x00\x08  \x00\x04@@\x00\x02\x00\x80\x00\x01\x01\x00\x00\x00\xc6\x00\x00\x008\x00\x00")
+        LOGO_WIDTH = 27
+        LOGO_HEIGHT = 32
+
+        # clear the screen
+        oled.fill(0)
+
+        # put the EuroPi leaf graphic on the side
+        imgFB = FrameBuffer(logo, LOGO_WIDTH, LOGO_HEIGHT, MONO_HLSB)
+        oled.blit(imgFB, 0, 0)
+
+        oled.text("Pam's Workout", LOGO_WIDTH+2, 0)
+        oled.text(f"v{VERSION}", LOGO_WIDTH+2, SELECT_OPTION_Y)
+        oled.show()
+
 class PamsWorkout(EuroPiScript):
     """The main script for the Pam's Workout implementation
     """
@@ -1052,7 +1092,12 @@ class PamsWorkout(EuroPiScript):
         return "Pam's Workout"
 
     def main(self):
+        splash = SplashScreen()
+        splash.draw()
+
         self.load()
+
+        time.sleep(0.5)
 
         while True:
             now = time.ticks_ms()
