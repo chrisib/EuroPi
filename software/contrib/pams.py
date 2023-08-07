@@ -1138,6 +1138,52 @@ class SettingChooser:
         else:
             self.set_editable(True)
 
+class Visualizer:
+    """Draws the states of CV1-6 in a graph
+    """
+    def __init__(self, script):
+        """Constructor
+
+        @param script  the PamsWorkout instance that this visualizer belongs to
+        """
+        self.pams = script
+        self.setting = None
+
+    def on_click(self):
+        pass
+
+    def is_editable(self):
+        return False
+
+    def draw(self):
+        """Draw the values of the 6 output channels as a horizontal bar graph
+
+        We _could_ have a rolling graph, but I'm worried about the memory usage that would necessitate
+
+        The OLED must be cleared before calling this function. You must call oled.show() after
+        calling this function
+        """
+
+        BAR_HEIGHT = 2
+        BAR_SEPARATION = 1
+        y = 0
+        w = 0
+        for ch in self.pams.channels:
+            w = int(ch.out_volts / MAX_OUTPUT_VOLTAGE * OLED_WIDTH)
+            oled.fill_rect(0, y, w, BAR_HEIGHT, 1)
+            y += BAR_HEIGHT + BAR_SEPARATION
+
+        for ch in CV_INS.keys():
+            w = int(CV_INS[ch].last_voltage / MAX_INPUT_VOLTAGE * OLED_WIDTH)
+            oled.fill_rect(0, y, w, BAR_HEIGHT, 1)
+            y += BAR_HEIGHT + BAR_SEPARATION
+
+        if din.value():
+            w = OLED_WIDTH
+        else:
+            w = 1
+
+
 class PamsMenu:
     def __init__(self, script):
         """Create the top-level menu for the application
@@ -1181,6 +1227,8 @@ class PamsMenu:
                 SettingChooser(ch, CV_INS[ch].precision)
             ]))
 
+        self.items.append(Visualizer(self.pams_workout))
+
         self.active_items = self.items
 
         ## The item we're actually drawing to the screen _right_now_
@@ -1190,7 +1238,7 @@ class PamsMenu:
         """Return a list of the visible items in the active_items for this menu layer
         """
         return [
-            item for item in self.active_items if item.setting.is_visible
+            item for item in self.active_items if item.setting is None or item.setting.is_visible
         ]
 
     def on_long_press(self):
