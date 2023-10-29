@@ -27,6 +27,7 @@ class EuroPiScript:
        class HelloWorld(EuroPiScript):  # 2
            def main():  # 3
                oled.centre_text("Hello world")
+               oled.show()
 
 
        if __name__ == "__main__":  # 4
@@ -97,6 +98,7 @@ class EuroPiScript:
 
             def main(self):
                 oled.centre_text("Hello world")
+                oled.show()
 
 
     .. note::
@@ -122,8 +124,10 @@ class EuroPiScript:
         def main(self):
             if self.config["language"] == "french":
                 oled.centre_text("Bonjour le monde")
+                oled.show()
             else:
                 oled.centre_text("Hello world")
+                oled.show()
 
     Configuration files are validated, so scripts do not need to worry about invalid values. Validation
     failures raise exceptions with messages that will help the user correct their configurations.
