@@ -495,7 +495,7 @@ class Display(SSD1306_I2C):
                 )
         super().__init__(self.width, self.height, i2c)
 
-    def centre_text(self, text, clear_first=True, auto_show=False):
+    def centre_text(self, text, clear_first=True, auto_show=True):
         """Split the provided text across 3 lines of display.
 
         @param text  The text to display, containing at most 3 lines
