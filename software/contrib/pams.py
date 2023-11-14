@@ -227,11 +227,17 @@ DIN_MODE_TRIGGER = 'Trig'
 ## Reset on a rising edge, but don't start/stop the clock
 DIN_MODE_RESET = 'Reset'
 
+## External clock
+#
+#  Note that we assume the incoming clock is at MasterClock.PPQN (e.g. 48)
+DIN_MODE_EXTERNAL = "Clk"
+
 ## Sorted list of DIN modes for display
 DIN_MODES = [
     DIN_MODE_GATE,
     DIN_MODE_TRIGGER,
-    DIN_MODE_RESET
+    DIN_MODE_RESET,
+    DIN_MODE_EXTERNAL
 ]
 
 ## True/False for yes/no settings (e.g. mute)
@@ -252,6 +258,7 @@ YES_NO_LABELS = [
 
 ## Integers 0-100 for choosing a percentage value
 PERCENT_RANGE = list(range(101))
+
 
 class Setting:
     """A single setting that can be loaded, saved, or dynamically read from an analog input
@@ -296,6 +303,9 @@ class Setting:
             self.choice = 0
 
         self.is_visible = is_visible
+
+        ## Dirty hack; set this to override the displayed value without actually changing the inner value
+        self.display_override = None
 
     def __str__(self):
         return self.display_name
@@ -348,7 +358,10 @@ class Setting:
             return opt
 
     def get_display_value(self):
-        return self.display_options[self.choice]
+        if self.display_override is None:
+            return self.display_options[self.choice]
+        else:
+            return self.display_override
 
     def choose(self, index):
         is_changing = self.choice != index
@@ -431,12 +444,15 @@ class MasterClock:
     MIN_BPM = 1
 
     ## The absolute fastest the clock can go
-    MAX_BPM = 300
+    MAX_BPM = 240
 
     def __init__(self, bpm):
         """Create the main clock to run at a given bpm
         @param bpm  The initial BPM to run the clock at
         """
+
+        ## Do we rely on an external trigger to advance the clock?
+        self.external_trigger = False
 
         self.channels = []
         self.is_running = False
@@ -450,6 +466,15 @@ class MasterClock:
 
         self.elapsed_pulses = 0
         self.start_time = 0
+
+    def set_external(self, setting, arg=None):
+        """Callback argument for when we change the DIN mode
+        """
+        self.external_trigger = (setting.get_value() == DIN_MODE_EXTERNAL)
+        if self.external_trigger:
+            self.bpm.display_override = "External"
+        else:
+            self.bpm.display_override = None
 
     def add_channels(self, channels):
         """Add the CV channels that this clock is (indirectly) controlling
@@ -483,12 +508,24 @@ class MasterClock:
     def on_tick(self, timer):
         """Callback function for the timer's tick
         """
-        if self.is_running:
+        if self.is_running and not self.external_trigger:
             for ch in self.channels:
                 ch.tick()
             self.elapsed_pulses = self.elapsed_pulses + 1
             for ch in self.channels:
                 ch.apply()
+
+    def force_tick(self):
+        """Force the internal clock to advance one tick
+
+        Used for externally-controlled clocks. Duplicates code from on_tick
+        to avoid additional function calls inside an ISR
+        """
+        for ch in self.channels:
+            ch.tick()
+        self.elapsed_pulses = self.elapsed_pulses + 1
+        for ch in self.channels:
+            ch.apply()
 
     def start(self):
         """Start the timer
@@ -1127,7 +1164,6 @@ class SettingChooser:
                 imgFB = FrameBuffer(img, 12, 12, MONO_HLSB)
                 oled.blit(imgFB, 0, SELECT_OPTION_Y)
 
-
         if self.is_writable:
             # draw the selection in inverted text
             selected_item = k2_bank.current.choice(self.setting.display_options)
@@ -1253,8 +1289,6 @@ class PamsWorkout(EuroPiScript):
     def __init__(self):
         super().__init__()
 
-        self.din_mode = Setting("DIN Mode", "din", DIN_MODES, DIN_MODES, False)
-
         self.clock = MasterClock(120)
         self.channels = [
             PamsOutput(cv1, self.clock, 1),
@@ -1265,6 +1299,8 @@ class PamsWorkout(EuroPiScript):
             PamsOutput(cv6, self.clock, 6),
         ]
         self.clock.add_channels(self.channels)
+
+        self.din_mode = Setting("DIN Mode", "din", DIN_MODES, DIN_MODES, False, on_change_fn=self.clock.set_external)
 
         ## The master top-level menu
         self.main_menu = PamsMenu(self)
@@ -1285,6 +1321,9 @@ class PamsWorkout(EuroPiScript):
             elif self.din_mode.get_value() == DIN_MODE_RESET:
                 for ch in self.channels:
                     ch.reset()
+            elif self.din_mode.get_value() == DIN_MODE_EXTERNAL:
+                if self.clock.is_running:
+                    self.clock.force_tick()
             else:
                 if self.clock.is_running:
                     self.clock.stop()

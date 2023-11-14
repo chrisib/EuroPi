@@ -90,7 +90,11 @@ by the current configuration for that channel.
 
 The main clock menu has the following options:
 
-- `BPM` -- the main BPM for the clock. Must be in the range `[1, 300]`.
+- `BPM` -- the main BPM for the clock. Must be in the range `[1, 240]`.
+
+If `DIN Mode` is set to `Clk` the BPM selection will be ignored and the clock will advance according to the
+incoming signals on `din`.  When in `Clk` mode the incoming signal is treated as a 48 PPQN (Pulses per Quarter Note)
+signal.  Set your incoming clock source accordingly!
 
 The submenu for the main clock has the following options:
 
@@ -98,6 +102,9 @@ The submenu for the main clock has the following options:
   - `Gate`: the clock will start on a rising edge and stop on a falling edge
   - `Trigger`: the clock will toggle between the running & stopped states on a rising edge
   - `Reset`: the clock will not change, but all waveforms & euclidean patterns will reset to the beginning
+  - `Clk`: DIN is used as an external clock source. When the script is running (i.e. after pressing B1) the incoming
+    signal will be used to advance the clock. This signal is assumed to be 48 PPQN.  (If you use an unclocked LFO
+    as the clock source you may need to use an external clock multiplier to speed it up!)
 - `Stop-Rst` -- Stop & Reset: if true, all waves & euclidean patterns will reset when the clock starts.
   Otherwise they will continue from where they stopped
 
