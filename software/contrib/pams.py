@@ -473,8 +473,12 @@ class MasterClock:
         self.external_trigger = (setting.get_value() == DIN_MODE_EXTERNAL)
         if self.external_trigger:
             self.bpm.display_override = "External"
+            if self.is_running:
+                self.timer.deinit()
         else:
             self.bpm.display_override = None
+            if self.is_running:
+                self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
     def add_channels(self, channels):
         """Add the CV channels that this clock is (indirectly) controlling
@@ -539,14 +543,17 @@ class MasterClock:
                 for ch in self.channels:
                     ch.reset()
 
-            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+            if not self.external_trigger:
+                self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
     def stop(self):
         """Stop the timer
         """
         if self.is_running:
             self.is_running = False
-            self.timer.deinit()
+
+            if not self.external_trigger:
+                self.timer.deinit()
 
             # Fire a reset trigger on any channels that have the CLOCK_MOD_RESET mode set
             # This trigger lasts 10ms
@@ -1314,6 +1321,10 @@ class PamsWorkout(EuroPiScript):
         #  button operations while doing so
         self.last_interaction_time = time.ticks_ms()
 
+        ## If DIN is set to external clock, the ISR sets this to True, allowing us to advance the clock in the main
+        #  thread when appropriate
+        self.external_trigger_recvd = False
+
         @din.handler
         def on_din_rising():
             if self.din_mode.get_value() == DIN_MODE_GATE:
@@ -1323,7 +1334,7 @@ class PamsWorkout(EuroPiScript):
                     ch.reset()
             elif self.din_mode.get_value() == DIN_MODE_EXTERNAL:
                 if self.clock.is_running:
-                    self.clock.force_tick()
+                    self.external_trigger_recvd = True;
             else:
                 if self.clock.is_running:
                     self.clock.stop()
@@ -1435,6 +1446,10 @@ class PamsWorkout(EuroPiScript):
 
             for cv in CV_INS.values():
                 cv.update()
+
+            if self.clock.external_trigger and self.external_trigger_recvd:
+                self.external_trigger_recvd = False
+                self.clock.force_tick()
 
             elapsed_time = time.ticks_diff(now, self.last_interaction_time)
             if elapsed_time > BLANK_TIMEOUT_MS:
