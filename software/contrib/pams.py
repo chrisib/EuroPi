@@ -259,6 +259,15 @@ YES_NO_LABELS = [
 ## Integers 0-100 for choosing a percentage value
 PERCENT_RANGE = list(range(101))
 
+def ms2bpm(ms):
+    """Convert the length of a gate (rise-to-rise) to a BPM
+
+    @param ms  The elapsed time in ms between consecutive rising edges
+
+    @return The equivalent BPM of the gate signal
+    """
+    return 60000.0 / ms
+
 
 class Setting:
     """A single setting that can be loaded, saved, or dynamically read from an analog input
@@ -318,6 +327,12 @@ class Setting:
             self.choice = settings["value"]
         else:
             self.choice = settings
+
+        if self.on_change_fn:
+            if self.callback_arg is not None:
+                self.on_change_fn(self, self.callback_arg)
+            else:
+                self.on_change_fn(self)
 
     def to_dict(self):
         return self.choice
@@ -451,11 +466,10 @@ class MasterClock:
         @param bpm  The initial BPM to run the clock at
         """
 
-        ## Do we rely on an external trigger to advance the clock?
-        self.external_trigger = False
-
         self.channels = []
         self.is_running = False
+
+        self.external_trigger = False
 
         self.bpm = Setting("BPM", "bpm", list(range(self.MIN_BPM, self.MAX_BPM+1)), list(range(self.MIN_BPM, self.MAX_BPM+1)), on_change_fn=self.recalculate_timer_hz, default_value=60)
         self.reset_on_start = Setting("Stop-Rst", "reset_on_start", ["Off", "On"], [False, True], default_value=True, allow_cv_in=False)
@@ -471,14 +485,10 @@ class MasterClock:
         """Callback argument for when we change the DIN mode
         """
         self.external_trigger = (setting.get_value() == DIN_MODE_EXTERNAL)
-        if self.external_trigger:
-            self.bpm.display_override = "External"
-            if self.is_running:
-                self.timer.deinit()
-        else:
-            self.bpm.display_override = None
-            if self.is_running:
-                self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+        #if self.external_trigger:
+        #    self.bpm.display_override = "External"
+        #else:
+        #    self.bpm.display_override = None
 
     def add_channels(self, channels):
         """Add the CV channels that this clock is (indirectly) controlling
@@ -512,7 +522,7 @@ class MasterClock:
     def on_tick(self, timer):
         """Callback function for the timer's tick
         """
-        if self.is_running and not self.external_trigger:
+        if self.is_running:
             for ch in self.channels:
                 ch.tick()
             self.elapsed_pulses = self.elapsed_pulses + 1
@@ -543,8 +553,7 @@ class MasterClock:
                 for ch in self.channels:
                     ch.reset()
 
-            if not self.external_trigger:
-                self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
     def stop(self):
         """Stop the timer
@@ -552,8 +561,7 @@ class MasterClock:
         if self.is_running:
             self.is_running = False
 
-            if not self.external_trigger:
-                self.timer.deinit()
+            self.timer.deinit()
 
             # Fire a reset trigger on any channels that have the CLOCK_MOD_RESET mode set
             # This trigger lasts 10ms
@@ -1321,9 +1329,11 @@ class PamsWorkout(EuroPiScript):
         #  button operations while doing so
         self.last_interaction_time = time.ticks_ms()
 
-        ## If DIN is set to external clock, the ISR sets this to True, allowing us to advance the clock in the main
-        #  thread when appropriate
-        self.external_trigger_recvd = False
+        ## Keep the last 2 rising edges of the external clock to calculate the BPM
+        self.last_external_clock_times = [0, time.ticks_ms()]
+
+        ## Used to indicate we've processed the last incoming clock signal to save CPU
+        self.last_external_clock_handled = False
 
         @din.handler
         def on_din_rising():
@@ -1333,8 +1343,9 @@ class PamsWorkout(EuroPiScript):
                 for ch in self.channels:
                     ch.reset()
             elif self.din_mode.get_value() == DIN_MODE_EXTERNAL:
-                if self.clock.is_running:
-                    self.external_trigger_recvd = True;
+                self.last_external_clock_times.append(time.ticks_ms())
+                self.last_external_clock_times.pop(0)
+                self.last_external_clock_handled = False
             else:
                 if self.clock.is_running:
                     self.clock.stop()
@@ -1447,9 +1458,18 @@ class PamsWorkout(EuroPiScript):
             for cv in CV_INS.values():
                 cv.update()
 
-            if self.clock.external_trigger and self.external_trigger_recvd:
-                self.external_trigger_recvd = False
-                self.clock.force_tick()
+            # Handle dynamic BPM calculations based on the external clock
+            if self.clock.external_trigger and not self.last_external_clock_handled:
+                self.last_external_clock_handled = True
+                elapsed_time = time.ticks_diff(self.last_external_clock_times[1], self.last_external_clock_times[0])
+                if elapsed_time == 0:  # avoid divide-by-zero errors
+                    elapsed_time = 1
+                bpm = round(ms2bpm(elapsed_time))
+                if bpm < MasterClock.MIN_BPM:
+                    bpm = MasterClock.MIN_BPM
+                elif bpm > MasterClock.MAX_BPM:
+                    bpm = MasterClock.MAX_BPM
+                self.clock.bpm.choose(bpm - MasterClock.MIN_BPM)  # convert to a 0-based index, allowed range is [0, MAX_BPM]
 
             elapsed_time = time.ticks_diff(now, self.last_interaction_time)
             if elapsed_time > BLANK_TIMEOUT_MS:
