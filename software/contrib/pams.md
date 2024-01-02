@@ -6,7 +6,7 @@ main clock generator, euclidean rhythm generator, clocked LFO, clocked
 random voltage source, etc... with optional quantization.
 
 The module itself will generate the master clock signal with a configurable
-BPM (1-300 BPM supported). Each output has an independently controlled
+BPM (1-240 BPM supported). Each output has an independently controlled
 clock multiplier or divider, chosen from the following:
 
 ```
@@ -49,7 +49,8 @@ The menu layout is as follows:
 Clock
  +-- BPM*
  |    +-- DIN Mode
- |    +-- Reset
+ |    +-- PPQN
+ |    +-- Stop Reset (Stop-Rst)
  |
 CV1
  +-- Mod.*
@@ -103,8 +104,10 @@ The submenu for the main clock has the following options:
   - `Trigger`: the clock will toggle between the running & stopped states on a rising edge
   - `Reset`: the clock will not change, but all waveforms & euclidean patterns will reset to the beginning
   - `Clk`: DIN is used as an external clock source. When the script is running (i.e. after pressing B1) the incoming
-    signal will be used to advance the clock. This signal is assumed to be 48 PPQN.  (If you use an unclocked LFO
-    as the clock source you may need to use an external clock multiplier to speed it up!)
+    signal will be used to advance the clock. This signal's PPQN value is determined by the `PPQN` setting, below
+- `PPQN` -- Set the PPQN for external clock sources. Only applies if `DIN Mode` is set to `Clk`. Defaults to 12 PPQN
+  Note that setting the PPQN too high, especially at faster clock speeds, may cause some instability with the overall
+  clock rate.
 - `Stop-Rst` -- Stop & Reset: if true, all waves & euclidean patterns will reset when the clock starts.
   Otherwise they will continue from where they stopped
 
