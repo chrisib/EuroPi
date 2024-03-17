@@ -520,23 +520,17 @@ class MasterClock:
                 self.elapsed_pulses = self.elapsed_pulses + 1
                 for ch in self.channels:
                     ch.apply()
-        else:
-            # force the CV channels off if the clock is not running
-            for ch in self.channels:
-                ch.cv_out.off()
 
     def start(self):
         """Start the clock
         """
         if not self.is_running:
-            self.last_tick_at = 0
             self.start_time = time.ticks_ms()
-            self.is_running = True
-
             if self.reset_on_start.get_value():
                 self.elapsed_pulses = 0
                 for ch in self.channels:
                     ch.reset()
+            self.is_running = True
 
     def stop(self):
         """Stop the clock
@@ -1351,10 +1345,10 @@ class PamsWorkout(EuroPiScript):
         self.digital_input_state = DigitalInputHelper(
             on_din_rising = self.on_din_rising,
             on_din_falling = self.on_din_falling,
-            on_b1_press = self.on_b1_press,
-            on_b1_release = self.on_b1_release,
-            on_b2_press = self.on_b2_press,
-            on_b2_release = self.on_b2_release
+            on_b1_rising = self.on_b1_press,
+            on_b1_falling = self.on_b1_release,
+            on_b2_rising = self.on_b2_press,
+            on_b2_falling = self.on_b2_release
         )
 
     def on_din_rising(self):
@@ -1506,8 +1500,11 @@ class PamsWorkout(EuroPiScript):
             for cv in CV_INS.values():
                 cv.update()
 
-            # Advance the master clock & set the output voltages
-            self.clock.tick()
+            # Advance the master clock & set the output voltages if the clock is running
+            if self.clock.is_running:
+                self.clock.tick()
+            else:
+                turn_off_all_cvs()
 
             # Force garbage collection at regular intervals
             now = time.ticks_ms()
