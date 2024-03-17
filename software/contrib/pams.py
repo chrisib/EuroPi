@@ -468,6 +468,12 @@ menu_knob = BufferedKnob(k2)
 
 class MasterClock:
     """The main clock that ticks and runs the outputs
+
+    The .tick() method must be called from the main thread. At regular intervals this will recalculate the voltage
+    for the output channels and apply them.
+
+    Internally the clock works on a 48 PPQN pulse rate, determined by the desired BPM.  This means, especially at low
+    speeds, waves like triangles, sines, and saws may have a slight stepped pattern to them, rather than being smooth.
     """
 
     ## The clock actually runs faster than its maximum BPM to allow
@@ -488,21 +494,34 @@ class MasterClock:
 
     def __init__(self, bpm):
         """Create the main clock to run at a given bpm
+
         @param bpm  The initial BPM to run the clock at
         """
 
         self.channels = []
         self.is_running = False
 
+        ## The BPM setting.  When changed, this will call self.recalculate_tick_us() automatically
         self.bpm = Setting("BPM", "bpm", list(range(self.MIN_BPM, self.MAX_BPM+1)), list(range(self.MIN_BPM, self.MAX_BPM+1)), on_change_fn=self.recalculate_tick_us, default_value=60)
+
+        ## Reset-on-start setting; if True all channels reset to initial positions when the clock stops
         self.reset_on_start = Setting("Stop-Rst", "reset_on_start", ["Off", "On"], [False, True], default_value=True, allow_cv_in=False)
 
+        ## The duration of a single PPQN tick in us
         self.tick_us = 1.0
-        self.last_tick_at = 0
-        self.recalculate_tick_us()
 
+        ## The us time that the last tick happened
+        self.last_tick_at = 0
+
+        ## How many pulses has the clock emitted
+        #
+        #  This is used in conjuction with per-channel clock modifiers to determine the output patterns
         self.elapsed_pulses = 0
+
+        ## The ms time that the clock started
         self.start_time = 0
+
+        self.recalculate_tick_us()
 
     def add_channels(self, channels):
         """Add the CV channels that this clock is (indirectly) controlling
