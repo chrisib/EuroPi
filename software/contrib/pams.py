@@ -16,7 +16,6 @@ from experimental.quantizer import CommonScales, Quantizer, SEMITONE_LABELS, SEM
 from experimental.screensaver import OledWithScreensaver
 
 from collections import OrderedDict
-from machine import Timer
 
 import gc
 import math
@@ -552,7 +551,7 @@ class MasterClock:
                 ch.cv_out.off()
 
     def start(self):
-        """Start the timer
+        """Start the clock
         """
         if not self.is_running:
             self.last_tick_at = 0
@@ -565,7 +564,7 @@ class MasterClock:
                     ch.reset()
 
     def stop(self):
-        """Stop the timer
+        """Stop the clock
         """
         if self.is_running:
             self.is_running = False
