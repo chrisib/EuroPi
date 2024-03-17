@@ -495,12 +495,12 @@ class MasterClock:
         self.channels = []
         self.is_running = False
 
-        self.bpm = Setting("BPM", "bpm", list(range(self.MIN_BPM, self.MAX_BPM+1)), list(range(self.MIN_BPM, self.MAX_BPM+1)), on_change_fn=self.recalculate_timer_hz, default_value=60)
+        self.bpm = Setting("BPM", "bpm", list(range(self.MIN_BPM, self.MAX_BPM+1)), list(range(self.MIN_BPM, self.MAX_BPM+1)), on_change_fn=self.recalculate_tick_us, default_value=60)
         self.reset_on_start = Setting("Stop-Rst", "reset_on_start", ["Off", "On"], [False, True], default_value=True, allow_cv_in=False)
 
-        self.tick_hz = 1.0
-        self.timer = Timer()
-        self.recalculate_timer_hz()
+        self.tick_us = 1.0
+        self.last_tick_at = 0
+        self.recalculate_tick_us()
 
         self.elapsed_pulses = 0
         self.start_time = 0
@@ -532,18 +532,22 @@ class MasterClock:
         if "reset_on_start" in settings.keys():
             self.reset_on_start.load(settings["reset_on_start"])
 
-        self.recalculate_timer_hz()
+        self.recalculate_tick_us()
 
-    def on_tick(self, timer):
-        """Callback function for the timer's tick
+    def tick(self):
+        """Check the current time and see if enough time has elapsed to trigger an output tick
         """
         if self.is_running:
-            for ch in self.channels:
-                ch.tick()
-            self.elapsed_pulses = self.elapsed_pulses + 1
-            for ch in self.channels:
-                ch.apply()
+            now = time.ticks_us()
+            if time.ticks_diff(now, self.last_tick_at) >= self.tick_us:
+                self.last_tick_at = now
+                for ch in self.channels:
+                    ch.tick()
+                self.elapsed_pulses = self.elapsed_pulses + 1
+                for ch in self.channels:
+                    ch.apply()
         else:
+            # force the CV channels off if the clock is not running
             for ch in self.channels:
                 ch.cv_out.off()
 
@@ -551,22 +555,20 @@ class MasterClock:
         """Start the timer
         """
         if not self.is_running:
-            self.is_running = True
+            self.last_tick_at = 0
             self.start_time = time.ticks_ms()
+            self.is_running = True
 
             if self.reset_on_start.get_value():
                 self.elapsed_pulses = 0
                 for ch in self.channels:
                     ch.reset()
 
-            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
-
     def stop(self):
         """Stop the timer
         """
         if self.is_running:
             self.is_running = False
-            self.timer.deinit()
 
             # Fire a reset trigger on any channels that have the CLOCK_MOD_RESET mode set
             # This trigger lasts 10ms
@@ -581,7 +583,7 @@ class MasterClock:
                 ch.cv_out.off()
 
     def running_time(self):
-        """Return how long the clock has been running
+        """Return how long the clock has been running in ms
         """
         if self.is_running:
             now = time.ticks_ms()
@@ -589,18 +591,14 @@ class MasterClock:
         else:
             return 0
 
-    def recalculate_timer_hz(self, bpm=None):
-        """Recalculate the frequency of the inner timer
-
-        If the timer is currently running deinitialize it and reset it to use the correct BPM
+    def recalculate_tick_us(self, bpm=None):
+        """Recalculate the duration of a single ppqn tick
 
         @param bpm  The BPM setting when this is called as an on-change callback
         """
-        self.tick_hz = self.bpm.get_value() / 60.0 * self.PPQN
+        tick_hz = self.bpm.get_value() / 60.0 * self.PPQN
+        self.tick_us = int(1.0 / tick_hz * 1000000)
 
-        if self.is_running:
-            self.timer.deinit()
-            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
 class PamsOutput:
     """Controls a single output jack
@@ -1542,6 +1540,8 @@ class PamsWorkout(EuroPiScript):
             menu_knob.update(1024)   # more samples to reduce GUI flickering
             for cv in CV_INS.values():
                 cv.update()
+
+            self.clock.tick()
 
             # Force garbage collection at regular intervals
             now = time.ticks_ms()
