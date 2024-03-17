@@ -14,6 +14,7 @@ from experimental.euclid import generate_euclidean_pattern
 from experimental.knobs import BufferedKnob
 from experimental.quantizer import CommonScales, Quantizer, SEMITONE_LABELS, SEMITONES_PER_OCTAVE
 from experimental.screensaver import OledWithScreensaver
+from experimental.thread import DigitalInputHelper
 
 from collections import OrderedDict
 
@@ -256,51 +257,6 @@ BANK_LABELS = [
 
 ## Integers 0-100 for choosing a percentage value
 PERCENT_RANGE = list(range(101))
-
-
-class DigitalInputMonitor:
-    """Helper class to work around the fact that _thread doesn't play nicely with ISRs
-
-    Used by the main thread to check the state of the buttons + din and indicate if rising/falling
-    edges are detected
-    """
-    def __init__(self):
-        self.din_rising = False
-        self.din_falling = False
-        self.b1_rising = False
-        self.b1_falling = False
-        self.b2_rising = False
-        self.b2_falling = False
-
-        self.din_high = False
-        self.b1_high = False
-        self.b2_high = False
-
-        self.b1_last_pressed = 0
-        self.b2_last_pressed = 0
-
-    def check(self):
-        din_state = din.value() != 0
-        b1_state = b1.value() != 0
-        b2_state = b2.value() != 0
-
-        self.din_rising = not self.din_high and din_state
-        self.din_falling = self.din_high and not din_state
-
-        self.b1_rising = not self.b1_high and b1_state
-        self.b1_falling = self.b1_high and not b1_state
-
-        self.b2_rising = not self.b2_high and b2_state
-        self.b2_falling = self.b2_high and not b2_state
-
-        self.din_high = din_state
-        self.b1_high = b1_state
-        self.b2_high = b2_state
-
-        if self.b1_rising:
-            self.b1_last_pressed = time.ticks_ms()
-        if self.b2_rising:
-            self.b2_last_pressed = time.ticks_ms()
 
 
 class Setting:
@@ -1392,9 +1348,16 @@ class PamsWorkout(EuroPiScript):
             default_channel.to_dict()
         ]
 
-        self.digital_input_state = DigitalInputMonitor()
+        self.digital_input_state = DigitalInputHelper(
+            on_din_rising = self.on_din_rising,
+            on_din_falling = self.on_din_falling,
+            on_b1_press = self.on_b1_press,
+            on_b1_release = self.on_b1_release,
+            on_b2_press = self.on_b2_press,
+            on_b2_release = self.on_b2_release
+        )
 
-    def on_din_rising():
+    def on_din_rising(self):
         if self.din_mode.get_value() == DIN_MODE_GATE:
             self.clock.start()
         elif self.din_mode.get_value() == DIN_MODE_RESET:
@@ -1537,28 +1500,13 @@ class PamsWorkout(EuroPiScript):
         last_gc_at = time.ticks_ms()
 
         while True:
-            # handle digital inputs
-            self.digital_input_state.check()
-            if self.digital_input_state.b1_rising:
-                self.on_b1_press()
-            elif self.digital_input_state.b1_falling:
-                self.on_b1_release()
-
-            if self.digital_input_state.b2_rising:
-                self.on_b2_press()
-            elif self.digital_input_state.b2_falling:
-                self.on_b2_release()
-
-            if self.digital_input_state.din_rising:
-                self.on_din_rising()
-            elif self.digital_input_state.din_falling:
-                self.on_din_falling()
-
-            # handle analogue inputs
+            # Read the digital and analogue inputs & handle any relevant callbacks
+            self.digital_input_state.update()
             menu_knob.update(1024)   # more samples to reduce GUI flickering
             for cv in CV_INS.values():
                 cv.update()
 
+            # Advance the master clock & set the output voltages
             self.clock.tick()
 
             # Force garbage collection at regular intervals
