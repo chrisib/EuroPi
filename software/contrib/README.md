@@ -61,6 +61,14 @@ Euclidean rhythm generator. Each channel can generate an independent euclidean r
 <i>Author: [chrisib](https://github.com/chrisib)</i>
 <br><i>Labels: sequencer, gates, triggers, euclidean</i>
 
+### Five Circles \[ [documentation](/software/contrib/five_circles.md) | [script](/software/contrib/five_circles.py) \]
+
+A chaotic sequencer based on the motion of five connected circles.  The speeds and radii of the circles can be changed
+to alter the sequences generated.
+
+<i>Author: [chrisib](https://github.com/chrisib)</i>
+<br><i>Labels: quantizer, sequencer</i>
+
 ### Gates and Triggers \[ [documentation](/software/contrib/gates_and_triggers.md) | [script](/software/contrib/gates_and_triggers.py) \]
 Convert incoming triggers to gates or gates to triggers.  Buttons allow manually creating gates/triggers, knobs control
 the duration of the output signals.

@@ -30,6 +30,7 @@ EUROPI_SCRIPTS = OrderedDict([
     ["EgressusMelodiam",  "contrib.egressus_melodiam.EgressusMelodiam"],
     ["EnvelopeGen",       "contrib.envelope_generator.EnvelopeGenerator"],
     ["Euclid",            "contrib.euclid.EuclideanRhythms"],
+    ["Five Circles",      "contrib.five_circles.FiveCircles"],
     ["Gates & Triggers",  "contrib.gates_and_triggers.GatesAndTriggers"],
     ["Hamlet",            "contrib.hamlet.Hamlet"],
     ["HarmonicLFOs",      "contrib.harmonic_lfos.HarmonicLFOs"],

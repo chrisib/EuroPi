@@ -144,6 +144,40 @@ class CommonScales:
     # fmt: on
 
 
+class NoteLetters:
+    """Notes of the scale as standard letter notation
+
+    This only covers one octave, so we wrap back around to 0 at the end
+    """
+    C = 0
+    C_sharp = 1
+    D_flat = 1
+
+    D = 2
+    D_sharp = 3
+    E_flat = 3
+
+    E = 4
+    E_sharp = 5
+    F_flat = 4
+
+    F = 5
+    F_sharp = 6
+    G_flat = 6
+
+    G = 7
+    G_sharp = 8
+    A_flat = 8
+
+    A = 9
+    A_sharp = 10
+    B_flat = 10
+
+    B = 11
+    B_sharp = 0  # wrap around to C
+    C_flat = 11
+
+
 class Intervals:
     """A collection of musical intervals as indices for the Quantizer __get_item__ and __set_item__ methods
 
