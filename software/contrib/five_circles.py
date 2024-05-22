@@ -11,7 +11,7 @@ Quantized sequencer that generates outputs based on the motion of 5 connected ci
 from europi import *
 from europi_script import EuroPiScript
 
-from experimental.quantizer import CommonScales, NoteLetters, VOLTS_PER_OCTAVE
+from experimental.quantizer import CommonScales, NoteLetters, VOLTS_PER_OCTAVE, SEMITONE_LABELS
 
 from math import cos, sin, atan2, pi, sqrt, degrees
 import random
@@ -100,8 +100,16 @@ class FiveCircles(EuroPiScript):
     def __init__(self):
         super().__init__()
 
-        radii = [1, 1, 1, 1, 1]
-        speeds = [1/7, 1/5, 1/3, 1/2, 1]
+        # The radii of the circles from inner to outer
+        radii = [5, 3, 2, 1, 1]
+
+        # The speeds of the circles in Hz; we'll convert to rad/s later
+        speeds = [0.1, 0.2, 0.4, 0.8, 1.6]
+
+        self.max_distance = sum(radii)
+        self.min_distance = radii[0] - sum(radii[1:])
+        if self.min_distance < 0:
+            self.min_distance = 0
 
         # Generate the 5 circles
         self.circles = []
@@ -113,7 +121,8 @@ class FiveCircles(EuroPiScript):
                 origin = self.circles[i-1].edge
 
             theta = random.random() * 2 * pi - pi
-            c = MovingCircle(origin, radii[i], speeds[i], theta)
+            v = speeds[i] * 2 * pi
+            c = MovingCircle(origin, radii[i], v, theta)
             self.circles.append(c)
 
         self.max_distance = sum(radii)
@@ -125,36 +134,70 @@ class FiveCircles(EuroPiScript):
         origin = Point(0, 0)
         last_circle = self.circles[-1]
 
-        #quantizer = CommonScales.NatMajor
-        quantizer = CommonScales.Chromatic
+        quantizer = CommonScales.NatMajor
 
         last_tick_at = time.ticks_us()
+        last_note_at = time.ticks_us()
+        last_root_at = time.ticks_us()
+
+        # Quantization variables
+        scale = 0
+        main_voltage = 0
+        root_voltage = 0
+        semitone = 0
+
+        prev_note = 0
+        prev_root = 0
+
+        TRIGGER_DURATION = 10000      # 10ms
+        MIN_SAMPLE_INTERVAL = 20000   # 20ms, 2x trigger duration
+        MAX_SAMPLE_INTERVAL = 1000000 # 1s
+
+        sample_interval = int((1-k1.percent()) * 100) / 100 * (MAX_SAMPLE_INTERVAL - MIN_SAMPLE_INTERVAL) + MIN_SAMPLE_INTERVAL
+        last_sample_at = time.ticks_us()
+
         while True:
             now = time.ticks_us()
+
+            sample_interval = int((1-k1.percent()) * 100) / 100 * (MAX_SAMPLE_INTERVAL - MIN_SAMPLE_INTERVAL) + MIN_SAMPLE_INTERVAL
 
             elapsed = time.ticks_diff(now, last_tick_at)
             for c in self.circles:
                 c.tick(elapsed)
 
-            r = origin.distance_from(last_circle.edge) / self.max_distance
-            theta = atan2(last_circle.edge.y, last_circle.edge.x)
+            if time.ticks_diff(now, last_sample_at) > sample_interval:
+                pitch = origin.distance_from(last_circle.edge) / (self.max_distance - self.min_distance) + self.min_distance
+                theta = atan2(last_circle.edge.y, last_circle.edge.x)
+                sector = int(degrees(theta) + 180 ) // 30  # divide the circle into 12 equal sectors for the circle of fifths
+                scale = circle_of_fifths[sector]
+                (main_voltage, semitone) = quantizer.quantize(pitch * VOLTS_PER_OCTAVE, root=scale)
+                (root_voltage, _) = quantizer.quantize(0, root=scale)
+                last_sample_at = now
 
-            #sector = int(degrees(theta) + 180 ) // 30  # divide the circle into 12 equal sectors for the circle of fifths
-            #(q_volts, semitone) = quantizer.quantize(r * VOLTS_PER_OCTAVE, root=circle_of_fifths[sector])
-            (q_volts, semitone) = quantizer.quantize(r * VOLTS_PER_OCTAVE)
+            if root_voltage != prev_root:
+                last_root_at = now
 
-            cv1.voltage(q_volts)
-
-            #oled.centre_text(
-#f"""{last_circle.edge.x:0.2f} {last_circle.edge.y:0.2f} {r:0.2f}
-#{sector} {semitone+circle_of_fifths[sector]}  {q_volts:0.2f}V"""
-#            )
             oled.centre_text(
-f"""{last_circle.edge.x:0.2f} {last_circle.edge.y:0.2f} {r:0.2f}
-{semitone} {q_volts:0.2f}V"""
+f"""{SEMITONE_LABELS[scale]}:{semitone}
+{1.0/(sample_interval / 1000000):0.2f}Hz
+"""
             )
 
+            # Set the outputs
+            cv1.voltage(main_voltage)
+            cv2.voltage(root_voltage)
+            if time.ticks_diff(now, last_root_at) <= TRIGGER_DURATION:
+                cv5.on()
+            else:
+                cv5.off()
+            if time.ticks_diff(now, last_sample_at) <= TRIGGER_DURATION:
+                cv6.on()
+            else:
+                cv6.off()
+
             last_tick_at = now
+            prev_note = main_voltage
+            prev_root = root_voltage
 
 
 if __name__ == "__main__":
