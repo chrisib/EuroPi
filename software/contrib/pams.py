@@ -11,9 +11,9 @@ from europi import *
 from europi_script import EuroPiScript
 
 from experimental.euclid import generate_euclidean_pattern
-from experimental.knobs import KnobBank
+from experimental.knobs import BufferedKnob
 from experimental.quantizer import CommonScales, Quantizer, SEMITONE_LABELS, SEMITONES_PER_OCTAVE
-from experimental.screensaver import OledWithScreensaver
+from experimental.screensaver import Screensaver
 
 from collections import OrderedDict
 from machine import Timer
@@ -23,20 +23,12 @@ import math
 import time
 import random
 
-## Screensaver-enabled display
-ssoled = OledWithScreensaver()
-
 ## Lockable knob bank for K2 to make menu navigation a little easier
 #
 #  Note that this does mean _sometimes_ you'll need to sweep the knob all the way left/right
 #  to unlock it
-k2_bank = (
-    KnobBank.builder(k2)
-    .with_unlocked_knob("main_menu")
-    .with_locked_knob("submenu", initial_percentage_value=0)
-    .with_locked_knob("choice", initial_percentage_value=0)
-    .build()
-)
+k1_buffer = BufferedKnob(k1)
+k2_buffer = BufferedKnob(k2)
 
 ## Vertical screen offset for placing user input
 SELECT_OPTION_Y = 16
@@ -222,6 +214,9 @@ DIN_MODE_GATE = 'Gate'
 ## Do we toggle the module on/off with a trigger on din?
 DIN_MODE_TRIGGER = 'Trig'
 
+## Incoming signal is a 48 PPQN clock pulse
+DIN_MODE_EXTERNAL = 'Clk'
+
 ## Reset on a rising edge, but don't start/stop the clock
 DIN_MODE_RESET = 'Reset'
 
@@ -229,7 +224,8 @@ DIN_MODE_RESET = 'Reset'
 DIN_MODES = [
     DIN_MODE_GATE,
     DIN_MODE_TRIGGER,
-    DIN_MODE_RESET
+    DIN_MODE_RESET,
+    DIN_MODE_EXTERNAL,
 ]
 
 ## True/False for yes/no settings (e.g. mute)
@@ -312,6 +308,9 @@ class Setting:
 
         self.is_visible = is_visible
 
+        ## Dirty hack; set this to override the displayed value without actually changing the inner value
+        self.display_override = None
+
     def __str__(self):
         return self.display_name
 
@@ -323,6 +322,12 @@ class Setting:
             self.choice = settings["value"]
         else:
             self.choice = settings
+
+        if self.on_change_fn:
+            if self.callback_arg is not None:
+                self.on_change_fn(self, self.callback_arg)
+            else:
+                self.on_change_fn(self)
 
     def to_dict(self):
         return self.choice
@@ -363,7 +368,10 @@ class Setting:
             return opt
 
     def get_display_value(self):
-        return self.display_options[self.choice]
+        if self.display_override is None:
+            return self.display_options[self.choice]
+        else:
+            return self.display_override
 
     def choose(self, index):
         is_changing = self.choice != index
@@ -459,6 +467,9 @@ class MasterClock:
         self.bpm = Setting("BPM", "bpm", list(range(self.MIN_BPM, self.MAX_BPM+1)), list(range(self.MIN_BPM, self.MAX_BPM+1)), on_change_fn=self.recalculate_timer_hz, default_value=60)
         self.reset_on_start = Setting("Stop-Rst", "reset_on_start", ["Off", "On"], [False, True], default_value=True, allow_cv_in=False)
 
+        ## Do we rely on an external trigger to advance the clock?
+        self.external_trigger = False
+
         self.tick_hz = 1.0
         self.timer = Timer()
         self.recalculate_timer_hz()
@@ -495,7 +506,7 @@ class MasterClock:
 
         self.recalculate_timer_hz()
 
-    def on_tick(self, timer):
+    def on_tick(self, timer=None):
         """Callback function for the timer's tick
         """
         if self.is_running:
@@ -517,14 +528,17 @@ class MasterClock:
                 for ch in self.channels:
                     ch.reset()
 
-            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+            if not self.external_trigger:
+                self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
     def stop(self):
         """Stop the timer
         """
         if self.is_running:
             self.is_running = False
-            self.timer.deinit()
+
+            if not self.external_trigger:
+                self.timer.deinit()
 
             # Fire a reset trigger on any channels that have the CLOCK_MOD_RESET mode set
             # This trigger lasts 10ms
@@ -560,6 +574,19 @@ class MasterClock:
         if self.is_running:
             self.timer.deinit()
             self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+
+    def set_external(self, setting, arg=None):
+        """Callback argument for when we change the DIN mode
+        """
+        self.external_trigger = (setting.get_value() == DIN_MODE_EXTERNAL)
+        if self.external_trigger:
+            self.bpm.display_override = "External"
+            if self.is_running:
+                self.timer.deinit()
+        else:
+            self.bpm.display_override = None
+            if self.is_running:
+                self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
 class PamsOutput:
     """Controls a single output jack
@@ -1103,7 +1130,7 @@ class SettingChooser:
     def draw(self):
         """Draw the menu to the screen
 
-        The OLED must be cleared before calling this function. You must call ssoled.show() after
+        The OLED must be cleared before calling this function. You must call oled.show() after
         calling this function
         """
 
@@ -1115,13 +1142,13 @@ class SettingChooser:
         # If we're in a top-level menu the submenu is non-empty. In that case, the prefix in inverted text
         # Otherwise, the title in inverted text to indicate we're in the sub-menu
         if len(self.submenu) != 0:
-            ssoled.fill_rect(prefix_left-1, 0, prefix_right+1, CHAR_HEIGHT+2, 1)
-            ssoled.text(self.prefix, prefix_left, 1, 0)
-            ssoled.text(str(self.setting), title_left, 1, 1)
+            oled.fill_rect(prefix_left-1, 0, prefix_right+1, CHAR_HEIGHT+2, 1)
+            oled.text(self.prefix, prefix_left, 1, 0)
+            oled.text(str(self.setting), title_left, 1, 1)
         else:
-            ssoled.fill_rect(title_left-1, 0, len(str(self.setting))*CHAR_WIDTH+2, CHAR_HEIGHT+2, 1)
-            ssoled.text(self.prefix, prefix_left, 1, 1)
-            ssoled.text(str(self.setting), title_left, 1, 0)
+            oled.fill_rect(title_left-1, 0, len(str(self.setting))*CHAR_WIDTH+2, CHAR_HEIGHT+2, 1)
+            oled.text(self.prefix, prefix_left, 1, 1)
+            oled.text(str(self.setting), title_left, 1, 0)
 
         if self.option_gfx is not None:
             # draw the option thumbnail to the screen if it exists
@@ -1129,10 +1156,10 @@ class SettingChooser:
             if self.is_writable:
                 if type(self.option_gfx) is dict or\
                    type(self.option_gfx) is OrderedDict:
-                    key = k2_bank.current.choice(list(self.option_gfx.keys()))
+                    key = k2_buffer.choice(list(self.option_gfx.keys()))
                     img = self.option_gfx[key]
                 else:
-                    img = k2_bank.current.choice(self.option_gfx)
+                    img = k2_buffer.choice(self.option_gfx)
             else:
                 key = self.setting.get_value()
                 img = self.option_gfx[key]
@@ -1140,27 +1167,27 @@ class SettingChooser:
             if img is not None:
                 text_left = 14
                 imgFB = FrameBuffer(img, 12, 12, MONO_HLSB)
-                ssoled.blit(imgFB, 0, SELECT_OPTION_Y)
+                oled.blit(imgFB, 0, SELECT_OPTION_Y)
 
 
         if self.is_writable:
             # draw the selection in inverted text
-            selected_item = k2_bank.current.choice(self.setting.display_options)
+            selected_item = k2_buffer.choice(self.setting.display_options)
             choice_text = f"{selected_item}"
             text_width = len(choice_text)*CHAR_WIDTH
 
-            ssoled.fill_rect(text_left, SELECT_OPTION_Y, text_left+text_width+3, CHAR_HEIGHT+4, 1)
-            ssoled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 0)
+            oled.fill_rect(text_left, SELECT_OPTION_Y, text_left+text_width+3, CHAR_HEIGHT+4, 1)
+            oled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 0)
         else:
             # draw the selection in normal text
             choice_text = f"{self.setting.get_display_value()}"
-            ssoled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 1)
+            oled.text(choice_text, text_left+1, SELECT_OPTION_Y+2, 1)
 
 
     def on_click(self):
         if self.is_writable:
             self.set_editable(False)
-            selected_index = k2_bank.current.choice(list(range(len(self.setting))))
+            selected_index = k2_buffer.choice(list(range(len(self.setting))))
             self.setting.choose(selected_index)
         else:
             self.set_editable(True)
@@ -1215,7 +1242,7 @@ class PamsMenu:
         self.active_items = self.items
 
         ## The item we're actually drawing to the screen _right_now_
-        self.visible_item = k2_bank.current.choice(self.get_active_items())
+        self.visible_item = k2_buffer.choice(self.get_active_items())
 
     def get_active_items(self):
         """Return a list of the visible items in the active_items for this menu layer
@@ -1231,23 +1258,15 @@ class PamsMenu:
         # toggle between the two menu levels
         if self.active_items == self.items:
             self.active_items = self.visible_item.submenu
-            k2_bank.set_current("submenu")
         else:
             self.active_items = self.items
-            k2_bank.set_current("main_menu")
 
     def on_click(self):
         self.visible_item.on_click()
-        if self.visible_item.is_writable:
-            k2_bank.set_current("choice")
-        elif self.active_items == self.items:
-            k2_bank.set_current("main_menu")
-        else:
-            k2_bank.set_current("submenu")
 
     def draw(self):
         if not self.visible_item.is_editable():
-            self.visible_item = k2_bank.current.choice(self.get_active_items())
+            self.visible_item = k2_buffer.choice(self.get_active_items())
 
         self.visible_item.draw()
 
@@ -1305,8 +1324,22 @@ class PamsWorkout(EuroPiScript):
     def __init__(self):
         super().__init__()
 
-        self.din_mode = Setting("DIN Mode", "din", DIN_MODES, DIN_MODES, False)
+        # Screensaver & timer for showing it
+        self.screensaver = Screensaver()
+        self.last_interaction_time = time.ticks_ms()
 
+        # Do we need to redraw the UI?
+        self.ui_dirty = True
+
+        # Flags indicating if we have an unhandled rising/falling edge of any digital inputs
+        self.din_rise_recvd = False
+        self.din_fall_recvd = False
+        self.b1_rise_recvd = False
+        self.b1_fall_recvd = False
+        self.b2_rise_recvd = False
+        self.b2_fall_recvd = False
+
+        # The master clock & output channels
         self.clock = MasterClock(120)
         self.channels = [
             PamsOutput(cv1, self.clock, 1),
@@ -1317,6 +1350,7 @@ class PamsWorkout(EuroPiScript):
             PamsOutput(cv6, self.clock, 6),
         ]
         self.clock.add_channels(self.channels)
+        self.din_mode = Setting("DIN Mode", "din", DIN_MODES, DIN_MODES, False, on_change_fn=self.clock.set_external)
 
         ## The master top-level menu
         self.main_menu = PamsMenu(self)
@@ -1344,66 +1378,76 @@ class PamsWorkout(EuroPiScript):
 
         @din.handler
         def on_din_rising():
-            if self.din_mode.get_value() == DIN_MODE_GATE:
-                self.clock.start()
-            elif self.din_mode.get_value() == DIN_MODE_RESET:
-                for ch in self.channels:
-                    ch.reset()
-            else:
-                if self.clock.is_running:
-                    self.clock.stop()
-                else:
-                    self.clock.start()
+            self.din_rise_recvd = True
 
         @din.handler_falling
         def on_din_falling():
-            if self.din_mode.get_value() == DIN_MODE_GATE:
-                self.clock.stop()
+            self.din_fall_recvd = True
 
         @b1.handler
         def on_b1_press():
-            """Handler for pressing button 1
+            self.b1_rise_recvd = True
 
-            Button 1 starts/stops the master clock
-            """
+        @b1.handler_falling
+        def on_b1_release():
+            self.b1_fall_recvd = True
+
+        @b2.handler
+        def on_b2_rise():
+            self.b2_rise_recvd = True
+
+        @b2.handler_falling
+        def on_b2_release():
+            self.b2_fall_recvd = True
+
+    def handle_din_rise(self):
+        if self.din_mode.get_value() == DIN_MODE_GATE:
+            self.clock.start()
+        elif self.din_mode.get_value() == DIN_MODE_RESET:
+            for ch in self.channels:
+                ch.reset()
+        elif self.din_mode.get_value() == DIN_MODE_EXTERNAL:
+            self.clock.on_tick()
+        else:
             if self.clock.is_running:
                 self.clock.stop()
             else:
                 self.clock.start()
 
-        @b1.handler_falling
-        def on_b1_release():
-            """Handler for releasing button 1
+    def handle_din_fall(self):
+        if self.din_mode.get_value() == DIN_MODE_GATE:
+                self.clock.stop()
 
-            Wake up the display if it's asleep.  We do this on release to keep the
-            wake up behavior the same for both buttons
-            """
-            ssoled.notify_user_interaction()
+    def handle_b1_rise(self):
+        if self.clock.is_running:
+            self.clock.stop()
+        else:
+            self.clock.start()
+        self.last_interaction_time = time.ticks_ms()
+        self.ui_dirty = True
 
+    def handle_b1_fall(self):
+        self.last_interaction_time = time.ticks_ms()
+        self.ui_dirty = True
 
-        @b2.handler_falling
-        def on_b2_release():
-            """Handler for releasing button 2
+    def handle_b2_rise(self):
+        self.last_interaction_time = time.ticks_ms()
+        self.ui_dirty = True
 
-            Handle long vs short presses differently
-
-            Button 2 is used to cycle between screens
-
-            If the screensaver is visible, just wake up the display & don't process
-            the actual button click/long-press
-            """
-            now = time.ticks_ms()
-            if not ssoled.is_screenaver() and not ssoled.is_blank():
-                if time.ticks_diff(now, b2.last_pressed()) > LONG_PRESS_MS:
-                    # long press
-                    # change between the main & sub menus
-                    self.main_menu.on_long_press()
-                else:
-                    # short press
-                    self.main_menu.on_click()
-                    self.save()
-
-            ssoled.notify_user_interaction()
+    def handle_b2_fall(self):
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self.last_interaction_time) < self.screensaver.ACTIVATE_TIMEOUT_MS:
+            # the screensave is not active
+            if time.ticks_diff(now, b2.last_pressed()) > LONG_PRESS_MS:
+                # long press
+                # change between the main & sub menus
+                self.main_menu.on_long_press()
+            else:
+                # short press
+                self.main_menu.on_click()
+                self.save()
+        self.last_interaction_time = now
+        self.ui_dirty = True
 
     def load(self):
         """Load parameters from persistent storage and apply them
@@ -1458,23 +1502,69 @@ class PamsWorkout(EuroPiScript):
     def main(self):
         self.load()
 
+        prev_k1 = 0
+        prev_k2 = 0
+
         while True:
             now = time.ticks_ms()
 
+            # read the analogue inputs
+            k1_buffer.update()
+            k2_buffer.update()
+            curr_k1 = k1_buffer.percent()
+            curr_k2 = k2_buffer.percent()
             for cv in CV_INS.values():
                 cv.update()
 
-            ssoled.fill(0)
-            self.main_menu.draw()
+            self.ui_dirty = (
+                self.ui_dirty or
+                curr_k1 != prev_k1 or curr_k2 != prev_k2 or
+                self.b1_rise_recvd or self.b1_fall_recvd or
+                self.b2_rise_recvd or self.b2_fall_recvd
+            )
 
-            # draw a simple header to indicate status
-            if self.clock.is_running:
-                imgFB = FrameBuffer(STATUS_IMG_PLAY, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
-            else:
-                imgFB = FrameBuffer(STATUS_IMG_PAUSE, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
-            ssoled.blit(imgFB, OLED_WIDTH - STATUS_IMG_WIDTH, 0)
+            # handle digital inputs
+            if self.din_rise_recvd:
+                self.din_rise_recvd = False
+                self.handle_din_rise()
+            if self.din_fall_recvd:
+                self.din_fall_recvd = False
+                self.handle_din_fall()
+            if self.b1_rise_recvd:
+                self.b1_rise_recvd = False
+                self.handle_b1_rise()
+            if self.b1_fall_recvd:
+                self.b1_fall_recvd = False
+                self.handle_b1_fall()
+            if self.b2_rise_recvd:
+                self.b2_rise_recvd = False
+                self.handle_b2_rise()
+            if self.b2_fall_recvd:
+                self.b2_fall_recvd = False
+                self.handle_b2_fall()
 
-            ssoled.show()
+            prev_k1 = curr_k1
+            prev_k2 = curr_k2
+
+            # Draw the GUI only if something's changed
+            screensaver_active = time.ticks_diff(now, self.last_interaction_time) >= self.screensaver.ACTIVATE_TIMEOUT_MS
+            if self.ui_dirty or screensaver_active:
+                self.ui_dirty = False
+
+                if screensaver_active:
+                    self.screensaver.draw()
+                else:
+                    oled.fill(0)
+                    self.main_menu.draw()
+
+                    # draw a simple header to indicate status
+                    if self.clock.is_running:
+                        imgFB = FrameBuffer(STATUS_IMG_PLAY, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
+                    else:
+                        imgFB = FrameBuffer(STATUS_IMG_PAUSE, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
+                    oled.blit(imgFB, OLED_WIDTH - STATUS_IMG_WIDTH, 0)
+
+                    oled.show()
 
 if __name__=="__main__":
     PamsWorkout().main()
