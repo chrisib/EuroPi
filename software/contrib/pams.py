@@ -16,7 +16,6 @@ from experimental.quantizer import CommonScales, Quantizer, SEMITONE_LABELS, SEM
 from experimental.screensaver import Screensaver
 
 from collections import OrderedDict
-from machine import Timer
 
 import gc
 import math
@@ -265,6 +264,67 @@ BANK_LABELS = [
 ## Integers 0-100 for choosing a percentage value
 PERCENT_RANGE = list(range(101))
 
+class Timer:
+    """A synchronous timer that runs a callback function at regular intervals
+
+    The main loop must call @update() at high speed to increment the internal clock
+    """
+
+    ## The number if microseconds per tick
+    us_per_tick = 0.0
+
+    ## Is the timer currently running
+    is_running = False
+
+    ## The clock time (us) of the last tick
+    last_tick_at = 0
+
+    def __init__(self, frequency, tick_callback=lambda _:None):
+        """Create the timer object in the stopped state
+
+        @param frequency  The timer frequency in Hz
+        @param tick_callback  The callback function to invoke every time the timer ticks
+                              Passes this timer instance as the parameter
+        """
+        self.tick_callback = tick_callback
+        self.set_frequency(frequency)
+        self.stop()
+
+    def set_frequency(self, hz):
+        """Set the frequency of the timer
+
+        @param hz  The desired frequency in Hz
+        """
+        self.us_per_tick = round(1.0 / hz * 1000000)
+
+    def start(self):
+        """Start the timer
+        """
+        now = time.ticks_us()
+        self.on_tick()
+        self.last_tick_at = now
+        self.is_running = True
+
+    def stop(self):
+        """Stop the timer
+        """
+        self.is_running = False
+
+    def update(self):
+        """Update the internal clock, firing the tick callback if enough time has elapsed
+        """
+        if self.is_running:
+            now = time.ticks_us()
+            if time.ticks_diff(now, self.last_tick_at) >= self.us_per_tick:
+                self.on_tick()
+                self.last_tick_at = now
+
+    def on_tick(self):
+        """Called internally every time the timer's duration elapses
+        """
+        self.tick_callback(self)
+
+
 class Setting:
     """A single setting that can be loaded, saved, or dynamically read from an analog input
     """
@@ -463,7 +523,7 @@ class MasterClock:
         self.reset_on_start = Setting("Stop-Rst", "reset_on_start", ["Off", "On"], [False, True], default_value=True, allow_cv_in=False)
 
         self.tick_hz = 1.0
-        self.timer = Timer()
+        self.timer = Timer(self.bpm.get_value(), self.on_tick)
         self.recalculate_timer_hz()
 
         self.elapsed_pulses = 0
@@ -520,7 +580,7 @@ class MasterClock:
                 for ch in self.channels:
                     ch.reset()
 
-            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+            self.timer.start()
 
     def stop(self):
         """Stop the timer
@@ -528,7 +588,7 @@ class MasterClock:
         if self.is_running:
             self.is_running = False
 
-            self.timer.deinit()
+            self.timer.stop()
 
             # Fire a reset trigger on any channels that have the CLOCK_MOD_RESET mode set
             # This trigger lasts 10ms
@@ -562,8 +622,7 @@ class MasterClock:
         self.tick_hz = self.bpm.get_value() / 60.0 * self.PPQN
 
         if self.is_running:
-            self.timer.deinit()
-            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+            self.timer.set_frequency(self.tick_hz)
 
 
 class PamsOutput:
@@ -1236,11 +1295,19 @@ class PamsMenu:
         # toggle between the two menu levels
         if self.active_items == self.items:
             self.active_items = self.visible_item.submenu
+            k2_bank.set_current("submenu")
         else:
             self.active_items = self.items
+            k2_bank.set_current("main_menu")
 
     def on_click(self):
         self.visible_item.on_click()
+        if self.visible_item.is_writable:
+            k2_bank.set_current("choice")
+        elif self.active_items == self.items:
+            k2_bank.set_current("main_menu")
+        else:
+            k2_bank.set_current("submenu")
 
     def draw(self):
         if not self.visible_item.is_editable():
@@ -1525,6 +1592,9 @@ class PamsWorkout(EuroPiScript):
 
             prev_k1 = curr_k1
             prev_k2 = curr_k2
+
+            # Nudge the main clock along
+            self.clock.timer.update()
 
             # Draw the GUI only if something's changed
             screensaver_active = time.ticks_diff(now, self.last_interaction_time) >= self.screensaver.ACTIVATE_TIMEOUT_MS
