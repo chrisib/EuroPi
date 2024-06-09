@@ -1500,6 +1500,9 @@ class PamsWorkout(EuroPiScript):
                 self.b2_rise_recvd or self.b2_fall_recvd
             )
 
+            if curr_k1 != prev_k1 or curr_k2 != prev_k2:
+                self.last_interaction_time = time.ticks_ms()
+
             # handle digital inputs
             if self.din_rise_recvd:
                 self.din_rise_recvd = False
