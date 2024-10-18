@@ -1,0 +1,3 @@
+# Set the values for one or more output pins
+europi_ros_msgs/AnaloguePin[] cv_states
+---
