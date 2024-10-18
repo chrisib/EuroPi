@@ -8,6 +8,7 @@ Communicates with the Raspberry Pi Pico via serial-over-USB in a JSON-based, syn
 import rclpy
 from rclpy.node import Node
 
+import json
 import serial
 from threading import Lock
 
@@ -39,7 +40,7 @@ class EuroPiRosNode(Node):
     def __init__(self):
         super().__init__('europi_ros_node')
         self.declare_parameter('tty', '/dev/ttyACM0')
-        self.tty = serial.Serial(sef.get_parameter('tty'))
+        self.tty = serial.Serial(self.get_parameter('tty').value, baudrate=9600)
 
         self.command_lock = Lock()
         self.command_queue = []
@@ -47,21 +48,21 @@ class EuroPiRosNode(Node):
         self.clear_srv = self.create_service(Trigger, 'clear_screen', self.clear_screen_cb)
         self.text_srv = self.create_service(SetText, 'set_text', self.set_text_cb)
         self.set_cv = self.create_service(SetCV, 'set_cv', self.set_cv_cb)
-        self.sync_timer = self.create_timer(10, self.serial_sync)
+        self.sync_timer = self.create_timer(0.05, self.serial_sync)
 
-        self.din_pub = self.create_publisher('din', DigitalPin, 1)
-        self.b1_pub = self.create_publisher('b1', DigitalPin, 1)
-        self.b2_pub = self.create_publisher('b2', DigitalPin, 1)
+        self.din_pub = self.create_publisher(DigitalPin, 'din', 1)
+        self.b1_pub = self.create_publisher(DigitalPin, 'b1', 1)
+        self.b2_pub = self.create_publisher(DigitalPin, 'b2', 1)
 
-        self.ain_pub = self.create_publisher('ain', AnaloguePin, 1)
-        self.k1_pub = self.create_publisher('k1', AnaloguePin, 1)
-        self.k2_pub = self.create_publisher('k2', AnaloguePin, 1)
-        self.cv1_pub = self.create_publisher('cv1', AnaloguePin, 1)
-        self.cv2_pub = self.create_publisher('cv2', AnaloguePin, 1)
-        self.cv3_pub = self.create_publisher('cv3', AnaloguePin, 1)
-        self.cv4_pub = self.create_publisher('cv4', AnaloguePin, 1)
-        self.cv5_pub = self.create_publisher('cv5', AnaloguePin, 1)
-        self.cv6_pub = self.create_publisher('cv6', AnaloguePin, 1)
+        self.ain_pub = self.create_publisher(AnaloguePin, 'ain', 1)
+        self.k1_pub = self.create_publisher(AnaloguePin, 'k1', 1)
+        self.k2_pub = self.create_publisher(AnaloguePin, 'k2', 1)
+        self.cv1_pub = self.create_publisher(AnaloguePin, 'cv1', 1)
+        self.cv2_pub = self.create_publisher(AnaloguePin, 'cv2', 1)
+        self.cv3_pub = self.create_publisher(AnaloguePin, 'cv3', 1)
+        self.cv4_pub = self.create_publisher(AnaloguePin, 'cv4', 1)
+        self.cv5_pub = self.create_publisher(AnaloguePin, 'cv5', 1)
+        self.cv6_pub = self.create_publisher(AnaloguePin, 'cv6', 1)
 
     def close_serial(self):
         self.tty.close()
@@ -94,7 +95,7 @@ class EuroPiRosNode(Node):
             if pin_state.name in CvOuts:
                 cmd = {
                     'cmd_type': Command.TYPE_SET_CV,
-                    'data': pin_state.voltage,
+                    'data': pin_state.volts,
                     'cv': CvOuts[pin_state.name]
                 }
                 commands.append(cmd)
@@ -114,11 +115,19 @@ class EuroPiRosNode(Node):
         self.command_lock.release()
 
         # write to the serial port
-        self.tty.write(f'{cmd_json.encode("UTF-8")}\n')
+        self.tty.write(cmd_json.strip().encode('UTF-8'))
+        self.tty.write(b'\r')
+        self.tty.flush()
 
         # read the serial state back
-        status_json = self.tty.readline()
-        status = json.loads(status_json)
+        status_json = self.tty.readline().decode()
+        try:
+            status = json.loads(status_json)
+        except:
+            return
+
+        if len(status) < 21:
+            return
 
         # publish the output on our topics
         d = DigitalPin()
@@ -137,47 +146,47 @@ class EuroPiRosNode(Node):
         self.b2_pub.publish(d)
 
         a.name = 'ain'
-        a.voltage = status[3]
+        a.volts = status[3]
         a.percent = status[4]
         self.ain_pub.publish(a)
 
         a.name = 'k1'
-        a.voltage = status[5]
+        a.volts = status[5]
         a.percent = status[6]
         self.k1_pub.publish(a)
 
         a.name = 'k2'
-        a.voltage = status[7]
+        a.volts = status[7]
         a.percent = status[8]
         self.k2_pub.publish(a)
 
         a.name = 'cv1'
-        a.voltage = status[9]
+        a.volts = status[9]
         a.percent = status[10]
         self.cv1_pub.publish(a)
 
         a.name = 'cv2'
-        a.voltage = status[11]
+        a.volts = status[11]
         a.percent = status[12]
         self.cv2_pub.publish(a)
 
         a.name = 'cv3'
-        a.voltage = status[13]
+        a.volts = status[13]
         a.percent = status[14]
         self.cv3_pub.publish(a)
 
         a.name = 'cv4'
-        a.voltage = status[15]
+        a.volts = status[15]
         a.percent = status[16]
         self.cv4_pub.publish(a)
 
         a.name = 'cv5'
-        a.voltage = status[17]
+        a.volts = status[17]
         a.percent = status[18]
         self.cv5_pub.publish(a)
 
         a.name = 'cv6'
-        a.voltage = status[19]
+        a.volts = status[19]
         a.percent = status[20]
         self.cv6_pub.publish(a)
 

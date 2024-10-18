@@ -11,6 +11,7 @@ def generate_launch_description():
 
     arg_tty = DeclareLaunchArgument(
         'tty',
+        description='Serial port that the EuroPi module is connected to',
         default_value='/dev/ttyACM0'
     )
 
@@ -25,6 +26,6 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     ld.add_action(arg_tty)
-    ld.add_action(pose_node)
+    ld.add_action(europi_node)
 
     return ld
