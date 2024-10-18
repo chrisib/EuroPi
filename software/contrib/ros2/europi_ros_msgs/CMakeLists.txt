@@ -28,7 +28,7 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AnaloguePin.msg"
-  "msg/DigitalPin.msg",
+  "msg/DigitalPin.msg"
   "srv/SetCV.srv"
   "srv/SetText.srv"
 )
