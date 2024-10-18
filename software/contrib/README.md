@@ -194,6 +194,14 @@ The outputs can also be rotated as inspired by the 4MS Rotating Clock Divider
 <i>Author: [roryjamesallen](https://github.com/roryjamesallen)</i>
 <br><i>Labels: n/a</i>
 
+### ROS 2 Jazzy \[ [documentation](/software/contrib/ros2.md) | [script](/software/contrib/ros2.py) \]
+A synchronous serial I/O control script designed to interact with the [ROS 2 packages](/software/contrb/ros2) provided.
+
+Allows control of EuroPi over a serial connection to an external computer.
+
+<i>Author: [chrisib](https://github.com/chrisib)</i>
+<br><i>Labels: serial, ROS, external control</i>
+
 ### Sequential Switch \[ [documentation](/software/contrib/sequential_switch.md) | [script](/software/contrib/sequential_switch.py) \]
 A 2-6 output sequential switch.  The analogue input is mirrored to one of the outputs, with the specific output changed every time a trigger is received.
 
