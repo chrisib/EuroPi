@@ -52,6 +52,7 @@ EUROPI_SCRIPTS = OrderedDict([
     ["Probapoly",         "contrib.probapoly.Probapoly"],
     ["Quantizer",         "contrib.quantizer.QuantizerScript"],
     ["RadioScanner",      "contrib.radio_scanner.RadioScanner"],
+    ["ROS 2 Jazzy",       "contrib.ros2.Ros2SerialInterface"],
     ["Scope",             "contrib.scope.Scope"],
     ["Seq. Switch",       "contrib.sequential_switch.SequentialSwitch"],
     ["Sigma",             "contrib.sigma.Sigma"],
