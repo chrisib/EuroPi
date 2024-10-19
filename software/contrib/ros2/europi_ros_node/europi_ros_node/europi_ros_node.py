@@ -7,6 +7,7 @@ Communicates with the Raspberry Pi Pico via serial-over-USB in a JSON-based, syn
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 import json
 import serial
@@ -50,19 +51,25 @@ class EuroPiRosNode(Node):
         self.set_cv = self.create_service(SetCV, 'set_cv', self.set_cv_cb)
         self.sync_timer = self.create_timer(0.05, self.serial_sync)
 
-        self.din_pub = self.create_publisher(DigitalPin, 'din', 1)
-        self.b1_pub = self.create_publisher(DigitalPin, 'b1', 1)
-        self.b2_pub = self.create_publisher(DigitalPin, 'b2', 1)
+        publisher_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
+            history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+            depth=1
+        )
 
-        self.ain_pub = self.create_publisher(AnaloguePin, 'ain', 1)
-        self.k1_pub = self.create_publisher(AnaloguePin, 'k1', 1)
-        self.k2_pub = self.create_publisher(AnaloguePin, 'k2', 1)
-        self.cv1_pub = self.create_publisher(AnaloguePin, 'cv1', 1)
-        self.cv2_pub = self.create_publisher(AnaloguePin, 'cv2', 1)
-        self.cv3_pub = self.create_publisher(AnaloguePin, 'cv3', 1)
-        self.cv4_pub = self.create_publisher(AnaloguePin, 'cv4', 1)
-        self.cv5_pub = self.create_publisher(AnaloguePin, 'cv5', 1)
-        self.cv6_pub = self.create_publisher(AnaloguePin, 'cv6', 1)
+        self.din_pub = self.create_publisher(DigitalPin, 'din', 10, qos_profile=publisher_qos)
+        self.b1_pub = self.create_publisher(DigitalPin, 'b1', 10, qos_profile=publisher_qos)
+        self.b2_pub = self.create_publisher(DigitalPin, 'b2', 10, qos_profile=publisher_qos)
+
+        self.ain_pub = self.create_publisher(AnaloguePin, 'ain', 10, qos_profile=publisher_qos)
+        self.k1_pub = self.create_publisher(AnaloguePin, 'k1', 10, qos_profile=publisher_qos)
+        self.k2_pub = self.create_publisher(AnaloguePin, 'k2', 10, qos_profile=publisher_qos)
+        self.cv1_pub = self.create_publisher(AnaloguePin, 'cv1', 10, qos_profile=publisher_qos)
+        self.cv2_pub = self.create_publisher(AnaloguePin, 'cv2', 10, qos_profile=publisher_qos)
+        self.cv3_pub = self.create_publisher(AnaloguePin, 'cv3', 10, qos_profile=publisher_qos)
+        self.cv4_pub = self.create_publisher(AnaloguePin, 'cv4', 10, qos_profile=publisher_qos)
+        self.cv5_pub = self.create_publisher(AnaloguePin, 'cv5', 10, qos_profile=publisher_qos)
+        self.cv6_pub = self.create_publisher(AnaloguePin, 'cv6', 10, qos_profile=publisher_qos)
 
     def close_serial(self):
         self.tty.close()
