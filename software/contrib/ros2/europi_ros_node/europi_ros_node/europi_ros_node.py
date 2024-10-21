@@ -10,7 +10,9 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 import json
+import os
 import serial
+import termios
 from threading import Lock
 
 from europi_ros_msgs.msg import *
@@ -40,8 +42,9 @@ CvOuts = {
 class EuroPiRosNode(Node):
     def __init__(self):
         super().__init__('europi_ros_node')
+
         self.declare_parameter('tty', '/dev/ttyACM0')
-        self.tty = serial.Serial(self.get_parameter('tty').value, baudrate=9600)
+        self.open_serial(self.get_parameter('tty').value)
 
         self.command_lock = Lock()
         self.command_queue = []
@@ -71,7 +74,35 @@ class EuroPiRosNode(Node):
         self.cv5_pub = self.create_publisher(AnaloguePin, 'cv5', 10, qos_profile=publisher_qos)
         self.cv6_pub = self.create_publisher(AnaloguePin, 'cv6', 10, qos_profile=publisher_qos)
 
+    def open_serial(self, dev, baud=9600):
+        """Open the specified tty device
+
+        @param dev  The raw serial device, e.g. '/dev/ttyACM0
+        @param baud  The desired baud rate
+        """
+        tty_wait_timer = self.create_rate(1)
+        first_wait = True
+        while not os.path.exists(dev):
+            if first_wait:
+                self.get_logger().info(f'Waiting for {dev} to appear on the filesystem...')
+                first_wait = False
+            else:
+                self.get_logger().debug(f'Still waiting for {dev} to appear on the filesystem...')
+            tty_wait_timer.sleep()
+
+        self.get_logger().info(f'Opening {dev} @ {baud} 8N1...')
+        self.tty = serial.Serial(dev, baudrate=baud)
+
+        # disable local echo; we don't want this as it may mess up the synchronization
+        self.get_logger().info(f'Configuring {dev}...')
+        fd = self.tty.fileno()
+        attrs = termios.tcgetattr(fd)
+        attrs[3] = attrs[3] & ~termios.ECHO
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
+
     def close_serial(self):
+        """Close the serial port"""
+        self.get_logger().info(f'Closing {self.tty.name}...')
         self.tty.close()
 
     def clear_screen_cb(self, req, resp):
