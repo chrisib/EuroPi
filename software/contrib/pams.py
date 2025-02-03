@@ -27,6 +27,8 @@ import random
 
 import _thread
 
+DEBUG_SINGLE_THREAD = True
+
 ## Screensaver-enabled display
 ssoled = OledWithScreensaver()
 
@@ -1457,70 +1459,92 @@ class PamsWorkout2(EuroPiScript):
         """A background thread that handles rendering the GUI
         """
         usb_connected_at_start = usb_connected.value()
+
         while(usb_connected_at_start == usb_connected.value()):
-            # only re-render the UI if necessary
-            if self.main_menu.ui_dirty or self.ui_dirty:
-                ssoled.notify_user_interaction()
-                ssoled.fill(0)
-                self.main_menu.draw(ssoled)
-                self.ui_dirty = False
+            self.render_ui()
+            self.check_and_save()
 
-            # draw a simple header to indicate status
+    def render_ui(self):
+        if self.main_menu.ui_dirty or self.ui_dirty:
+            #with open('/menu_dbg.txt', 'a') as log:
+            #    log.write(f'{self.main_menu.knob.percent()} {self.main_menu.active_item.prefix}/{self.main_menu.active_item.title}\n')
+            ssoled.notify_user_interaction()
+            ssoled.fill(0)
+            self.main_menu.draw(ssoled)
+            self.ui_dirty = False
+
+        # draw a simple header to indicate status
+        if self.clock.is_running:
+            imgFB = FrameBuffer(STATUS_IMG_PLAY, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
+        else:
+            imgFB = FrameBuffer(STATUS_IMG_PAUSE, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
+        ssoled.blit(imgFB, OLED_WIDTH - STATUS_IMG_WIDTH, 0)
+
+        # This will either update the UI or animate the screensaver
+        ssoled.show()
+
+    def check_and_save(self):
+        if self.main_menu.settings_dirty:
+            self.main_menu.save(self._state_filename)
+
+    def on_din_rise(self):
+        self.din_rise_recvd = False
+        if self.din_mode.value == DIN_MODE_GATE:
+            self.clock.start()
+            self.ui_dirty = True
+        elif self.din_mode.value == DIN_MODE_RESET:
+            for ch in self.channels:
+                ch.reset()
+        else:
             if self.clock.is_running:
-                imgFB = FrameBuffer(STATUS_IMG_PLAY, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
+                self.clock.stop()
+                self.ui_dirty = True
             else:
-                imgFB = FrameBuffer(STATUS_IMG_PAUSE, STATUS_IMG_WIDTH, STATUS_IMG_HEIGHT, MONO_HLSB)
-            ssoled.blit(imgFB, OLED_WIDTH - STATUS_IMG_WIDTH, 0)
+                self.clock.start()
+                self.ui_dirty = True
 
-            # This will either update the UI or animate the screensaver
-            ssoled.show()
+    def on_din_fall(self):
+        self.din_fall_recvd = False
+        if self.din_mode.value == DIN_MODE_GATE:
+            self.clock.stop()
+            self.ui_dirty = True
 
-            if self.main_menu.settings_dirty:
-                self.main_menu.save(self._state_filename)
+    def on_b1_press(self):
+        self.b1_rise_recvd = False
+        if self.clock.is_running:
+            self.clock.stop()
+        else:
+            self.clock.start()
+        self.ui_dirty = True
 
     def main(self):
-        self.ui_thread = _thread.start_new_thread(self.ui_thread, ())
+        if not DEBUG_SINGLE_THREAD:
+            self.ui_thread = _thread.start_new_thread(self.ui_thread, ())
 
         prev_k1 = CV_INS["KNOB"].percent()
         prev_k2 = k2_bank.current.percent()
 
         while True:
-            for cv_in in CV_INS.values():
-                cv_in.update()
-
             current_k1 = CV_INS["KNOB"].percent()
             current_k2 = k2_bank.current.percent()
 
             if self.din_rise_recvd:
-                self.din_rise_recvd = False
-                if self.din_mode.value == DIN_MODE_GATE:
-                    self.clock.start()
-                elif self.din_mode.value == DIN_MODE_RESET:
-                    for ch in self.channels:
-                        ch.reset()
-                else:
-                    if self.clock.is_running:
-                        self.clock.stop()
-                    else:
-                        self.clock.start()
+                self.on_din_rise()
 
             if self.din_fall_recvd:
-                self.din_fall_recvd = False
-                if self.din_mode.value == DIN_MODE_GATE:
-                    self.clock.stop()
+                self.on_din_fall()
 
             if self.b1_rise_recvd:
-                self.b1_rise_recvd = False
-                if self.clock.is_running:
-                    self.clock.stop()
-                else:
-                    self.clock.start()
-                self.ui_dirty = True
+                self.on_b1_press()
 
             # wake up from the screensaver if we rotate a knob
             if abs(current_k1 - prev_k1) > 0.02 or abs(current_k2 - prev_k2) > 0.02:
-                self.ui_dirty = True
                 ssoled.notify_user_interaction()
+                self.ui_dirty = True
+
+            if DEBUG_SINGLE_THREAD:
+                self.render_ui()
+                self.check_and_save()
 
             prev_k1 = current_k1
             prev_k2 = prev_k2
