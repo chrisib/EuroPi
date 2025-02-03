@@ -25,6 +25,8 @@ import math
 import time
 import random
 
+import _thread
+
 ## Screensaver-enabled display
 ssoled = OledWithScreensaver()
 
@@ -1395,43 +1397,23 @@ class PamsWorkout2(EuroPiScript):
         )
         self.main_menu.load_defaults(self._state_filename)
 
+        self.din_rise_recvd = False
         @din.handler
         def on_din_rising():
-            if self.din_mode.value == DIN_MODE_GATE:
-                self.clock.start()
-            elif self.din_mode.value == DIN_MODE_RESET:
-                for ch in self.channels:
-                    ch.reset()
-            else:
-                if self.clock.is_running:
-                    self.clock.stop()
-                else:
-                    self.clock.start()
+            self.din_rise_recvd = True
 
+        self.din_fall_recvd = False
         @din.handler_falling
         def on_din_falling():
-            if self.din_mode.value == DIN_MODE_GATE:
-                self.clock.stop()
+            self.din_fall_recvd = True
 
+        self.b1_rise_recvd = False
         @b1.handler
         def on_b1_press():
-            """Handler for pressing button 1
-
-            Button 1 starts/stops the master clock
-            """
-            if self.clock.is_running:
-                self.clock.stop()
-            else:
-                self.clock.start()
-            self.ui_dirty = True
+            self.b1_rise_recvd = True
 
         @b1.handler_falling
         def on_b1_release():
-            """Handler for releasing button 1
-
-            Wake up the display if it's asleep.  We do this on release to keep the
-            wake up behavior the same for both buttons
-            """
             ssoled.notify_user_interaction()
 
     def load_bank(self, bank, channel):
@@ -1471,22 +1453,11 @@ class PamsWorkout2(EuroPiScript):
     def bank_filename(self, bank):
         return f'saved_state_{self.__class__.__qualname__}_{bank.lower().replace(" ", "_")}.json'
 
-    def main(self):
-        prev_k1 = CV_INS["KNOB"].percent()
-        prev_k2 = k2_bank.current.percent()
-
-        while True:
-            for cv_in in CV_INS.values():
-                cv_in.update()
-
-            current_k1 = CV_INS["KNOB"].percent()
-            current_k2 = k2_bank.current.percent()
-
-            # wake up from the screensaver if we rotate a knob
-            if abs(current_k1 - prev_k1) > 0.02 or abs(current_k2 - prev_k2) > 0.02:
-                self.ui_dirty = True
-                ssoled.notify_user_interaction()
-
+    def ui_thread(self):
+        """A background thread that handles rendering the GUI
+        """
+        usb_connected_at_start = usb_connected.value()
+        while(usb_connected_at_start == usb_connected.value()):
             # only re-render the UI if necessary
             if self.main_menu.ui_dirty or self.ui_dirty:
                 ssoled.notify_user_interaction()
@@ -1506,6 +1477,50 @@ class PamsWorkout2(EuroPiScript):
 
             if self.main_menu.settings_dirty:
                 self.main_menu.save(self._state_filename)
+
+    def main(self):
+        self.ui_thread = _thread.start_new_thread(self.ui_thread, ())
+
+        prev_k1 = CV_INS["KNOB"].percent()
+        prev_k2 = k2_bank.current.percent()
+
+        while True:
+            for cv_in in CV_INS.values():
+                cv_in.update()
+
+            current_k1 = CV_INS["KNOB"].percent()
+            current_k2 = k2_bank.current.percent()
+
+            if self.din_rise_recvd:
+                self.din_rise_recvd = False
+                if self.din_mode.value == DIN_MODE_GATE:
+                    self.clock.start()
+                elif self.din_mode.value == DIN_MODE_RESET:
+                    for ch in self.channels:
+                        ch.reset()
+                else:
+                    if self.clock.is_running:
+                        self.clock.stop()
+                    else:
+                        self.clock.start()
+
+            if self.din_fall_recvd:
+                self.din_fall_recvd = False
+                if self.din_mode.value == DIN_MODE_GATE:
+                    self.clock.stop()
+
+            if self.b1_rise_recvd:
+                self.b1_rise_recvd = False
+                if self.clock.is_running:
+                    self.clock.stop()
+                else:
+                    self.clock.start()
+                self.ui_dirty = True
+
+            # wake up from the screensaver if we rotate a knob
+            if abs(current_k1 - prev_k1) > 0.02 or abs(current_k2 - prev_k2) > 0.02:
+                self.ui_dirty = True
+                ssoled.notify_user_interaction()
 
             prev_k1 = current_k1
             prev_k2 = prev_k2
