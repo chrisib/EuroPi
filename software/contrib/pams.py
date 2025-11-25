@@ -35,6 +35,7 @@ from machine import Timer
 
 import gc
 import math
+import micropython
 import time
 import random
 
@@ -295,11 +296,15 @@ DIN_MODE_TRIGGER = 'Trig'
 ## Reset on a rising edge, but don't start/stop the clock
 DIN_MODE_RESET = 'Reset'
 
+## Advance the internal clock on every external tick (48ppqn)
+DIN_MODE_EXTERNAL = "Ext. Clk"
+
 ## Sorted list of DIN modes for display
 DIN_MODES = [
     DIN_MODE_GATE,
     DIN_MODE_TRIGGER,
-    DIN_MODE_RESET
+    DIN_MODE_RESET,
+    DIN_MODE_EXTERNAL,
 ]
 
 ## True/False labels for yes/no settings (e.g. mute)
@@ -446,6 +451,8 @@ class MasterClock:
         self.channels = []
         self.is_running = False
 
+        self.external_trigger = False
+
         self.bpm = SettingMenuItem(
             config_point = IntegerConfigPoint(
                 "bpm",
@@ -485,7 +492,8 @@ class MasterClock:
         for ch in channels:
             self.channels.append(ch)
 
-    def on_tick(self, timer):
+    @micropython.native
+    def on_tick(self, timer=None):
         """Callback function for the timer's tick
         """
         if self.is_running:
@@ -507,14 +515,18 @@ class MasterClock:
                 for ch in self.channels:
                     ch.reset()
 
-            self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+
+            if not self.external_trigger:
+                self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
     def stop(self):
         """Stop the timer
         """
         if self.is_running:
             self.is_running = False
-            self.timer.deinit()
+
+            if not self.external_trigger:
+                self.timer.deinit()
 
             # Fire a reset trigger on any channels that have the CLOCK_MOD_RESET mode set
             # This trigger lasts 10ms
@@ -548,6 +560,17 @@ class MasterClock:
         if self.is_running:
             self.timer.deinit()
             self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
+
+    def set_external(self, new_value=None, old_value=None, config_point=None, arg=None):
+        """Callback argument for when we change the DIN mode
+        """
+        self.external_trigger = (new_value == DIN_MODE_EXTERNAL)
+        if self.external_trigger:
+            if self.is_running:
+                self.timer.deinit()
+        else:
+            if self.is_running:
+                self.timer.init(freq=self.tick_hz, mode=Timer.PERIODIC, callback=self.on_tick)
 
 
 class PamsOutput:
@@ -981,6 +1004,7 @@ class PamsOutput:
         self.real_clock_mod = self.clock_mod.mapped_value
         self.clock_mod_dirty = False
 
+    @micropython.native
     def square_wave(self, tick, n_ticks):
         """Calculate the [0, 1] value of a square wave with PWM
 
@@ -1005,6 +1029,7 @@ class PamsOutput:
         else:
             return 0.0
 
+    @micropython.native
     def triangle_wave(self, tick, n_ticks):
         """Calculate the [0, 1] value of a triangle wave
 
@@ -1033,6 +1058,7 @@ class PamsOutput:
             y = peak - step * (tick - rising_ticks)
         return y
 
+    @micropython.native
     def sine_wave(self, tick, n_ticks):
         """Calculate the [0, 1] value of a sine wave
 
@@ -1049,6 +1075,7 @@ class PamsOutput:
         s_theta = (math.sin(theta) + 1) / 2   # (sin(x) + 1)/2 since we can't output negative voltages
         return s_theta
 
+    @micropython.native
     def adsr_wave(self, tick, n_ticks):
         """Calculate the [0, 1] level of an ADSR envelope
 
@@ -1102,6 +1129,7 @@ class PamsOutput:
             # outside of the ADSR
             return 0.0
 
+    @micropython.native
     def turing_shift(self):
         """Shift the turing machine register by 1 bit
         """
@@ -1112,6 +1140,7 @@ class PamsOutput:
             incoming_bit = (self.turing_register >> (self.t_length.value - 1)) & 0x01
         self.turing_register = ((self.turing_register << 1) & 0xffff) | incoming_bit
 
+    @micropython.native
     def turing_wave(self, tick, n_ticks):
         """Calculate the [0, 1] output of a Turing Machine wave
 
@@ -1161,6 +1190,7 @@ class PamsOutput:
         for s in self.all_settings:
             s.reset_to_default()
 
+    @micropython.native
     def tick(self):
         """Advance the current pattern one tick and calculate the output voltage
 
@@ -1351,6 +1381,8 @@ class PamsWorkout2(EuroPiScript):
     def __init__(self):
         super().__init__()
 
+        self.clock = MasterClock(120)
+
         # Are UI elements _not_ managed by the main menu dirty?
         self.ui_dirty = True
 
@@ -1361,10 +1393,10 @@ class PamsWorkout2(EuroPiScript):
                 DIN_MODE_GATE
             ),
             prefix = "Clk",
-            title = "DIN Mode"
+            title = "DIN Mode",
+            callback = self.clock.set_external,
         )
 
-        self.clock = MasterClock(120)
         self.channels = [
             PamsOutput(cv1, self.clock, 1),
             PamsOutput(cv2, self.clock, 2),
@@ -1460,21 +1492,16 @@ class PamsWorkout2(EuroPiScript):
         )
         self.main_menu.load_defaults(self._state_filename)
 
+        self.din_rise_recvd = False
+        self.din_fall_recvd = False
+
         @din.handler
         def on_din_rising():
-            if self.din_mode.value == DIN_MODE_GATE:
-                self.clock.start()
-            elif self.din_mode.value == DIN_MODE_RESET:
-                for ch in self.channels:
-                    ch.reset()
-            else:
-                if self.clock.is_running:
-                    self.clock.stop()
-                else:
-                    self.clock.start()
+            self.din_rise_recvd = True
 
         @din.handler_falling
         def on_din_falling():
+            self.din_fall_recvd = True
             if self.din_mode.value == DIN_MODE_GATE:
                 self.clock.stop()
 
@@ -1536,6 +1563,26 @@ class PamsWorkout2(EuroPiScript):
     def bank_filename(self, bank):
         return f'saved_state_{self.__class__.__qualname__}_{bank.lower().replace(" ", "_")}.json'
 
+    @micropython.native
+    def handle_din_rise(self):
+        if self.din_mode.value == DIN_MODE_GATE:
+            self.clock.start()
+        elif self.din_mode.value == DIN_MODE_RESET:
+            for ch in self.channels:
+                ch.reset()
+        elif self.din_mode.value == DIN_MODE_EXTERNAL:
+            self.clock.on_tick()
+        else:
+            if self.clock.is_running:
+                self.clock.stop()
+            else:
+                self.clock.start()
+
+    @micropython.native
+    def handle_din_fall(self):
+        if self.din_mode.value == DIN_MODE_GATE:
+            self.clock.stop()
+
     def main(self):
         prev_k1 = CV_INS["KNOB"].percent()
         prev_k2 = k2_bank.current.percent()
@@ -1543,6 +1590,13 @@ class PamsWorkout2(EuroPiScript):
         while True:
             for cv_in in CV_INS.values():
                 cv_in.update()
+
+            if self.din_rise_recvd:
+                self.din_rise_recvd = False
+                self.handle_din_rise()
+            if self.din_fall_recvd:
+                self.din_fall_recvd = False
+                self.handle_din_fall()
 
             current_k1 = CV_INS["KNOB"].percent()
             current_k2 = k2_bank.current.percent()
