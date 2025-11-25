@@ -106,6 +106,8 @@ The submenu for the main clock has the following options:
   - `Trigger`: the clock will toggle between the running & stopped states on a rising edge
   - `Reset`: the clock will not change, but all waveforms & euclidean patterns will reset to the
     beginning
+  - `Ext. Clk`: the input signal is assumed to be a 48 PPQN clock source, which will advance the
+    clock on the rising edge
 - `Stop-Rst` -- Stop & Reset: if true, all waves & euclidean patterns will reset when the clock
   starts. Otherwise they will continue from where they stopped
 
