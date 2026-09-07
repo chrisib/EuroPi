@@ -30,16 +30,22 @@ for i in ${!SRC_DIRS[@]}; do
     done
 done
 
-echo "Compiling micropython and firmware modules..."
-cd /micropython/ports/rp2
+# Extract the version number from the Python module
+VERSION=$(python3 -c "import importlib.util; import sys; spec=importlib.util.spec_from_file_location('europi_version', '/micropython/ports/rp2/modules/version.py'); module=importlib.util.module_from_spec(spec); sys.modules['europi_version']=module; spec.loader.exec_module(module); print(module.__version__)")
 
 # Pico W must be last; we need to remove some code to make it fit
 # TODO: What do we actually need to remove?
 BOARDS="RPI_PICO2 RPI_PICO RPI_PICO2_W RPI_PICO_W"
 
+echo
+echo "==== BEGIN COMPILE ===="
+echo "Compiling micropython and firmware modules for EuroPi $VERSION..."
+echo
+
+cd /micropython/ports/rp2
 for b in $BOARDS; do
     echo "make BOARD=$b"
     make BOARD=$b
-    echo "Moving firmware file to /europi/software/uf2_build/europi-$b-dev.uf2"
-    mv build-$b/firmware.uf2 /europi/software/uf2_build/europi-$b-dev.uf2
+    echo "Moving firmware file to /europi/software/uf2_build/europi-$b-$VERSION.uf2"
+    mv build-$b/firmware.uf2 /europi/software/uf2_build/europi-$b-$VERSION.uf2
 done
