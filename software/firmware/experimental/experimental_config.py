@@ -144,6 +144,12 @@ class ExperimentalConfig:
                 "ENABLE_WEBREPL",
                 default=False
             ),
+
+            # Bluetooth settings
+            configuration.string(
+                "BT_DEVICE_NAME",
+                default="EuroPi"
+            ),
         ]
         # fmt: on
 

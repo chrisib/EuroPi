@@ -43,6 +43,7 @@ class ExperimentalConfigurationEditor(EuroPiScript):
         quantizer_items = []
         rtc_items = []
         wifi_items = []
+        bt_items = []
 
         config_points = ExperimentalConfig.config_points()
         for cfg in config_points:
@@ -60,13 +61,17 @@ class ExperimentalConfigurationEditor(EuroPiScript):
                 prefix = "WiFi"
                 items = wifi_items
             elif "RTC" in cfg.name or "UTC" in cfg.name:
-                title = cfg.name.replace("RTC", "").replace("_", ' ').lower().strip()
+                title = cfg.name.replace("RTC", "").replace("_", " ").lower().strip()
                 prefix = "RTC"
                 items = rtc_items
             elif "WIFI" in cfg.name:
-                title = cfg.name.replace("WIFI", "").replace("_", ' ').lower().strip()
+                title = cfg.name.replace("WIFI", "").replace("_", " ").lower().strip()
                 prefix = "WiFi"
                 items = wifi_items
+            elif "BT" in cfg.name:
+                title = cfg.name.replace("BT", "").replace("_", " ").lower().strip()
+                prefix = "BT"
+                items = bt_items
 
             items.append(
                 SettingMenuItem(
@@ -80,22 +85,28 @@ class ExperimentalConfigurationEditor(EuroPiScript):
 
         self.menu = SettingsMenu(
             menu_items=[
-                # Voltage properties
+                # Quantizer properties
                 SectionHeader(
                     title="Quantizer",
                     children=quantizer_items,
                 ),
 
-                # System properties
+                # Clock properties
                 SectionHeader(
                     title="Realtime Clk",
                     children=rtc_items,
                 ),
 
-                # Display properties
+                # Wifi properties
                 SectionHeader(
                     title="WiFi",
                     children=wifi_items,
+                ),
+
+                # Bluetooth properties
+                SectionHeader(
+                    title="BT",
+                    children=bt_items,
                 ),
             ],
             navigation_knob=k2_bank,
