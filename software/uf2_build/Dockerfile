@@ -7,7 +7,7 @@ RUN apt update && apt install -y \
 
 WORKDIR /
 
-RUN git clone -b v1.28.0 --depth=1 --recursive https://github.com/micropython/micropython.git
+RUN git clone -b v1.29.0 --depth=1 --recursive https://github.com/micropython/micropython.git
 
 WORKDIR micropython
 
