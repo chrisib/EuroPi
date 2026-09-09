@@ -141,7 +141,7 @@ class BluetoothConnection:
 
         :param interval_us: The advertise interval in us.
         """
-        name = bytes(self.device_name, "UTF-8")
+        name = bytes(self.device_name, "utf-8")
         self.ble.gap_advertise(interval_us,
                                adv_data = b'\x02\x01\x05' + bytearray((len(name) + 1, 0x09)) + name,
                                resp_data = b'\x11\x07\x00\xC7\xC4\x4E\xE3\x6C\x51\xA7\x33\x4B\xE8\xEd\x5A\x0E\xB8\x03')
