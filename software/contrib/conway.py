@@ -317,7 +317,7 @@ class Conway(EuroPiScript):
         if self.num_changes == 0 or self.num_alive == 0:
             return True
 
-        # if the population is oscillating up and down predicatbly, we've probably reached stasis
+        # if the population is oscillating up and down predictably, we've probably reached stasis
         # check for 2, 3, and 4 step repetitions
         for pattern_length in range(2, 5):
             count = self.MAX_DELTAS // pattern_length
